@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import { inject, injectable } from 'inversify';
 import * as path from 'path';
@@ -327,6 +328,7 @@ class RecordingUtilModel implements IRecordingUtilModel {
             this.log.system.warn(`channel name get error: ${src.channelId}`);
         }
         const jaDate = DateUtil.getJaDate(new Date(src.startAt));
+        const uuid = crypto.randomUUID();
 
         return format
             .replace(/%YEAR%/g, DateUtil.format(jaDate, 'yyyy'))
@@ -345,7 +347,8 @@ class RecordingUtilModel implements IRecordingUtilModel {
             .replace(/%SID%/g, sid)
             .replace(/%ID%/g, id.toString())
             .replace(/%TITLE%/g, programName === null ? 'NULL' : programName)
-            .replace(/%HALF_WIDTH_TITLE%/g, src.halfWidthName === null ? 'NULL' : src.halfWidthName);
+            .replace(/%HALF_WIDTH_TITLE%/g, src.halfWidthName === null ? 'NULL' : src.halfWidthName)
+            .replace(/%UUID%/g, uuid);
     }
 }
 

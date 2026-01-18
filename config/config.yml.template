@@ -25,7 +25,7 @@ conflictPriority: 1
 recPriority: 2
 isEnabledDropCheck: true
 
-recordedFormat: '%YEAR%年%MONTH%月%DAY%日%HOUR%時%MIN%分%SEC%秒-%HALF_WIDTH_TITLE%-%HALF_WIDTH_CHNAME%'
+recordedFormat: '%YEAR%%MONTH%%DAY%-%HOUR%%MIN%%SEC%_%UUID%'
 recordedFileExtension: .m2ts
 recorded:
     - name: recorded

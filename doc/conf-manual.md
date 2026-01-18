@@ -578,6 +578,7 @@ recordedTmp: '/hoge/fuga'
 | %ID%                | Program ID                    |
 | %TITLE%             | 番組タイトル                  |
 | %HALF_WIDTH_TITLE%  | 番組タイトル (半角)           |
+| %UUID%              | UUID (ランダムな一意識別子)   |
 
 ```yaml
 recordedFormat: '%TITLE% [%CHNAME%] %YEAR%年%MONTH%月%DAY%日(%DOW%曜日)'
