@@ -11,6 +11,7 @@ import Recorded from '../../../db/entities/Recorded';
 import RecordedHistory from '../../../db/entities/RecordedHistory';
 import Reserve from '../../../db/entities/Reserve';
 import VideoFile from '../../../db/entities/VideoFile';
+import BufferedWriteStream from '../../../lib/BufferedWriteStream';
 import FileUtil from '../../../util/FileUtil';
 import StrUtil from '../../../util/StrUtil';
 import IDropLogFileDB from '../../db/IDropLogFileDB';
@@ -56,6 +57,7 @@ class RecorderModel implements IRecorderModel {
     private timerId: NodeJS.Timeout | null = null;
     private stream: http.IncomingMessage | null = null;
     private passThroughStreamForWrite: stream.PassThrough | null = null;
+    private bufferedWriteStream: BufferedWriteStream | null = null;
     private recFile: fs.WriteStream | null = null;
     private isStopPrepRec: boolean = false;
     private isNeedDeleteReservation: boolean = true;
@@ -269,6 +271,28 @@ class RecorderModel implements IRecorderModel {
             }
         }
 
+        // stop buffered write stream
+        if (this.bufferedWriteStream !== null) {
+            try {
+                // 終了時のバッファ統計をログに記録
+                const stats = this.bufferedWriteStream.getBufferStats();
+                if (stats.used > 0) {
+                    this.log.system.info(
+                        `recording buffer stats at end: ${stats.percentage.toFixed(1)}% used ` +
+                            `(${stats.used} bytes), reserveId: ${this.reserve.id}`,
+                    );
+                }
+                if (needesUnpip === true) {
+                    this.bufferedWriteStream.unpipe();
+                }
+                this.bufferedWriteStream.destroy();
+                this.bufferedWriteStream = null;
+            } catch (err: any) {
+                this.log.system.error(`destroy buffered write stream error: ${this.reserve.id}`);
+                this.log.system.error(err);
+            }
+        }
+
         // stop save file
         if (this.recFile !== null) {
             try {
@@ -319,7 +343,12 @@ class RecorderModel implements IRecorderModel {
         this.log.system.info(`recording: ${this.reserve.id} ${recPath.fullPath}`);
 
         // save stream
-        this.recFile = fs.createWriteStream(recPath.fullPath, { flags: 'a' });
+        // WriteStream を大きめの highWaterMark で作成
+        const writeHighWaterMark = (this.config.recordingWriteHighWaterMark ?? 4096) * 1024;
+        this.recFile = fs.createWriteStream(recPath.fullPath, {
+            flags: 'a',
+            highWaterMark: writeHighWaterMark,
+        });
         this.recFile.once('error', async err => {
             // 書き込みエラー発生
             this.log.system.error(`recFile error reserveId: ${this.reserve.id}, recordedId: ${this.recordedId}`);
@@ -337,11 +366,27 @@ class RecorderModel implements IRecorderModel {
             }
         });
 
-        this.passThroughStreamForWrite = new stream.PassThrough();
-        this.passThroughStreamForWrite.pipe(this.recFile);
+        // BufferedWriteStream を作成して IO ピークを吸収
+        const bufferSize = (this.config.recordingBufferSize ?? 512) * 1024 * 1024;
+        const warningThreshold = this.config.recordingBufferWarningThreshold ?? 80;
+        this.bufferedWriteStream = new BufferedWriteStream({
+            maxBufferSize: bufferSize,
+            warningThreshold: warningThreshold,
+            logger: this.log,
+            reserveId: this.reserve.id,
+        });
+        this.bufferedWriteStream.setWriteStream(this.recFile);
+
+        this.log.system.info(
+            `recording buffer initialized: ${bufferSize / (1024 * 1024)}MB, ` +
+                `warning threshold: ${warningThreshold}%, reserveId: ${this.reserve.id}`,
+        );
 
         // drop checker
         if (this.config.isEnabledDropCheck === true) {
+            // drop checker 用に PassThrough を作成
+            this.passThroughStreamForWrite = new stream.PassThrough();
+
             let dropFilePath: string | null = null;
             try {
                 await this.dropChecker.start(this.config.dropLog, recPath.fullPath, this.passThroughStreamForWrite);
@@ -368,9 +413,14 @@ class RecorderModel implements IRecorderModel {
                     this.log.system.error(err);
                 }
             }
-        }
 
-        this.stream.pipe(this.passThroughStreamForWrite);
+            // stream → PassThrough → BufferedWriteStream
+            this.passThroughStreamForWrite.pipe(this.bufferedWriteStream);
+            this.stream.pipe(this.passThroughStreamForWrite);
+        } else {
+            // stream → BufferedWriteStream
+            this.stream.pipe(this.bufferedWriteStream);
+        }
 
         return new Promise<void>((resolve: () => void, reject: (error: Error) => void) => {
             if (this.stream === null) {

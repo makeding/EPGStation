@@ -260,6 +260,9 @@ namespace Configuration {
         dropLog: path.join(__dirname, '..', '..', 'drop'),
         uploadTempDir: path.join(__dirname, '..', '..', 'data', 'upload'),
         isEnabledDropCheck: false,
+        recordingBufferSize: 512, // 512MB
+        recordingBufferWarningThreshold: 80, // 80%
+        recordingWriteHighWaterMark: 4096, // 4MB
         ffmpeg: '/usr/local/bin/ffmpeg',
         ffprobe: '/usr/local/bin/ffprobe',
         encodeProcessNum: 0,

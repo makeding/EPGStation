@@ -126,6 +126,11 @@ export default interface IConfigFile {
     dropLog: string;
     isEnabledDropCheck: boolean; // drop check を有効にするか
 
+    // 録画バッファ設定
+    recordingBufferSize?: number; // 録画バッファサイズ (MB)、デフォルト 512
+    recordingBufferWarningThreshold?: number; // 警告閾値 (パーセント)、デフォルト 80
+    recordingWriteHighWaterMark?: number; // WriteStream バッファ (KB)、デフォルト 4096
+
     // upload
     uploadTempDir: string;
 

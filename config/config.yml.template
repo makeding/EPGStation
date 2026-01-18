@@ -25,6 +25,12 @@ conflictPriority: 1
 recPriority: 2
 isEnabledDropCheck: true
 
+# 録画バッファ設定
+# IO 過負荷時にデータを一時的にメモリにバッファリングして録画データの損失を防ぐ
+# recordingBufferSize: 512             # バッファサイズ (MB)、デフォルト 512MB
+# recordingBufferWarningThreshold: 80  # 警告閾値 (%)、デフォルト 80
+# recordingWriteHighWaterMark: 4096    # WriteStream バッファ (KB)、デフォルト 4MB
+
 recordedFormat: '%YEAR%%MONTH%%DAY%-%HOUR%%MIN%%SEC%_%UUID%'
 recordedFileExtension: .m2ts
 recorded:
