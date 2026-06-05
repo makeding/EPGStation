@@ -89,7 +89,9 @@ components:
             type: string
             enum:
                 - GR
+                - GR-ALT
                 - BS
+                - BS4K
                 - CS
                 - SKY
                 - NW1
@@ -260,7 +262,11 @@ components:
                     properties:
                         GR:
                             type: boolean
+                        GR-ALT:
+                            type: boolean
                         BS:
+                            type: boolean
+                        BS4K:
                             type: boolean
                         CS:
                             type: boolean
@@ -739,8 +745,14 @@ components:
                 GR:
                     description: GR
                     type: boolean
+                GR-ALT:
+                    description: GR-ALT
+                    type: boolean
                 BS:
                     description: BS
+                    type: boolean
+                BS4K:
+                    description: BS4K
                     type: boolean
                 CS:
                     description: CS
@@ -1961,10 +1973,26 @@ components:
             schema:
                 type: boolean
 
+        requiredGRALT:
+            description: GR-ALT
+            in: query
+            name: GR-ALT
+            required: true
+            schema:
+                type: boolean
+
         requiredBS:
             description: BS
             in: query
             name: BS
+            required: true
+            schema:
+                type: boolean
+
+        requiredBS4K:
+            description: BS4K
+            in: query
+            name: BS4K
             required: true
             schema:
                 type: boolean

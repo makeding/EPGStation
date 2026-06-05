@@ -2,62 +2,22 @@ import { Operation } from 'express-openapi';
 import * as apid from '../../../../api';
 import IScheduleApiModel from '../../api/schedule/IScheduleApiModel';
 import container from '../../ModelContainer';
+import ChannelTypeUtil from '../../../util/ChannelTypeUtil';
 import * as api from '../api';
 
 export const get: Operation = async (req, res) => {
     const scheduleApiModel = container.get<IScheduleApiModel>('IScheduleApiModel');
 
     try {
-        const option: apid.ScheduleOption = {
+        const option = {
             startAt: parseInt(req.query.startAt as any, 10),
             endAt: parseInt(req.query.endAt as any, 10),
             isHalfWidth: req.query.isHalfWidth as any,
             needsRawExtended: req.query.needsRawExtended as any,
-            GR: req.query.GR as any,
-            BS: req.query.BS as any,
-            CS: req.query.CS as any,
-            SKY: req.query.SKY as any,
-            NW1: req.query.NW1 as any,
-            NW2: req.query.NW2 as any,
-            NW3: req.query.NW3 as any,
-            NW4: req.query.NW4 as any,
-            NW5: req.query.NW5 as any,
-            NW6: req.query.NW6 as any,
-            NW7: req.query.NW7 as any,
-            NW8: req.query.NW8 as any,
-            NW9: req.query.NW9 as any,
-            NW10: req.query.NW10 as any,
-            NW11: req.query.NW11 as any,
-            NW12: req.query.NW12 as any,
-            NW13: req.query.NW13 as any,
-            NW14: req.query.NW14 as any,
-            NW15: req.query.NW15 as any,
-            NW16: req.query.NW16 as any,
-            NW17: req.query.NW17 as any,
-            NW18: req.query.NW18 as any,
-            NW19: req.query.NW19 as any,
-            NW20: req.query.NW20 as any,
-            NW21: req.query.NW21 as any,
-            NW22: req.query.NW22 as any,
-            NW23: req.query.NW23 as any,
-            NW24: req.query.NW24 as any,
-            NW25: req.query.NW25 as any,
-            NW26: req.query.NW26 as any,
-            NW27: req.query.NW27 as any,
-            NW28: req.query.NW28 as any,
-            NW29: req.query.NW29 as any,
-            NW30: req.query.NW30 as any,
-            NW31: req.query.NW31 as any,
-            NW32: req.query.NW32 as any,
-            NW33: req.query.NW33 as any,
-            NW34: req.query.NW34 as any,
-            NW35: req.query.NW35 as any,
-            NW36: req.query.NW36 as any,
-            NW37: req.query.NW37 as any,
-            NW38: req.query.NW38 as any,
-            NW39: req.query.NW39 as any,
-            NW40: req.query.NW40 as any,
-        };
+        } as apid.ScheduleOption;
+        for (const type of ChannelTypeUtil.CHANNEL_TYPES) {
+            option[type] = req.query[type] as any;
+        }
         if (typeof req.query.isFree === 'boolean') {
             option.isFree = req.query.isFree;
         }
@@ -91,7 +51,13 @@ get.apiDoc = {
             $ref: '#/components/parameters/requiredGR',
         },
         {
+            $ref: '#/components/parameters/requiredGRALT',
+        },
+        {
             $ref: '#/components/parameters/requiredBS',
+        },
+        {
+            $ref: '#/components/parameters/requiredBS4K',
         },
         {
             $ref: '#/components/parameters/requiredCS',

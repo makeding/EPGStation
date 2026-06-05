@@ -8,6 +8,7 @@ import * as mapid from '../../../node_modules/mirakurun/api';
 import IChannelDB from '../db/IChannelDB';
 import IChannelTypeIndex from '../db/IChannelTypeHash';
 import IProgramDB from '../db/IProgramDB';
+import ChannelUtil from '../../util/ChannelUtil';
 import IConfiguration from '../IConfiguration';
 import ILogger from '../ILogger';
 import ILoggerModel from '../ILoggerModel';
@@ -203,7 +204,8 @@ class EPGUpdateManageModel extends EventEmitter implements IEPGUpdateManageModel
      */
     private updateChannelIndex(services: mapid.Service[]): void {
         for (const service of services) {
-            if (typeof service.channel === 'undefined') {
+            const serviceChannel = ChannelUtil.getServiceChannel(service);
+            if (serviceChannel === null) {
                 continue;
             }
             if (typeof this.channelIndex[service.networkId] === 'undefined') {
@@ -211,8 +213,8 @@ class EPGUpdateManageModel extends EventEmitter implements IEPGUpdateManageModel
             }
             this.channelIndex[service.networkId][service.serviceId] = {
                 id: service.id,
-                type: service.channel.type,
-                channel: service.channel.channel,
+                type: serviceChannel.type,
+                channel: serviceChannel.channel,
             };
         }
     }

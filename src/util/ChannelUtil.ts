@@ -1,5 +1,20 @@
 /* eslint-disable no-fallthrough */
 namespace ChannelUtil {
+    export interface ServiceChannel {
+        type: string;
+        channel: string;
+    }
+
+    export const getServiceChannel = (service: {
+        channel?: ServiceChannel | ServiceChannel[];
+    }): ServiceChannel | null => {
+        if (typeof service.channel === 'undefined') {
+            return null;
+        }
+
+        return Array.isArray(service.channel) === true ? service.channel[0] : service.channel;
+    };
+
     /**
      * 映像・音声サービスであるかを返す
      * @param serviceType: number 対象のサービスタイプ

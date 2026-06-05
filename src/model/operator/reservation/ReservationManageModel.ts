@@ -7,6 +7,7 @@ import Reserve from '../../../db/entities/Reserve';
 import DateUtil from '../../../util/DateUtil';
 import StrUtil from '../../../util/StrUtil';
 import Util from '../../../util/Util';
+import ChannelTypeUtil from '../../../util/ChannelTypeUtil';
 import IChannelDB from '../../db/IChannelDB';
 import IProgramDB, { ProgramWithOverlap } from '../../db/IProgramDB';
 import IReserveDB, { IFindTimeRangesOption, IReserveTimeOption } from '../../db/IReserveDB';
@@ -38,52 +39,7 @@ class ReservationManageModel implements IReservationManageModel {
     private ruleDB: IRuleDB;
     private reserveEvent: IReserveEvent;
     private tuners: Tuner[] = [];
-    private broadcastStatus: apid.BroadcastStatus = {
-        GR: false,
-        BS: false,
-        CS: false,
-        SKY: false,
-        NW1: false,
-        NW2: false,
-        NW3: false,
-        NW4: false,
-        NW5: false,
-        NW6: false,
-        NW7: false,
-        NW8: false,
-        NW9: false,
-        NW10: false,
-        NW11: false,
-        NW12: false,
-        NW13: false,
-        NW14: false,
-        NW15: false,
-        NW16: false,
-        NW17: false,
-        NW18: false,
-        NW19: false,
-        NW20: false,
-        NW21: false,
-        NW22: false,
-        NW23: false,
-        NW24: false,
-        NW25: false,
-        NW26: false,
-        NW27: false,
-        NW28: false,
-        NW29: false,
-        NW30: false,
-        NW31: false,
-        NW32: false,
-        NW33: false,
-        NW34: false,
-        NW35: false,
-        NW36: false,
-        NW37: false,
-        NW38: false,
-        NW39: false,
-        NW40: false,
-    };
+    private broadcastStatus: apid.BroadcastStatus = ChannelTypeUtil.createBroadcastStatus();
 
     constructor(
         @inject('ILoggerModel') logger: ILoggerModel,

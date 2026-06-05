@@ -4,6 +4,7 @@ import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity
 import * as apid from '../../../api';
 import * as mapid from '../../../node_modules/mirakurun/api';
 import Channel from '../../db/entities/Channel';
+import ChannelUtil from '../../util/ChannelUtil';
 import StrUtil from '../../util/StrUtil';
 import IConfiguration from '../IConfiguration';
 import ILogger from '../ILogger';
@@ -42,7 +43,8 @@ export default class ChannelDB implements IChannelDB {
         // 挿入データ作成
         try {
             for (const channel of channels) {
-                if (typeof channel.channel === 'undefined') {
+                const serviceChannel = ChannelUtil.getServiceChannel(channel);
+                if (serviceChannel === null) {
                     return;
                 }
 
@@ -56,9 +58,9 @@ export default class ChannelDB implements IChannelDB {
                     remoteControlKeyId:
                         typeof channel.remoteControlKeyId === 'undefined' ? null : channel.remoteControlKeyId,
                     hasLogoData: !!channel.hasLogoData,
-                    channelTypeId: this.getChannelTypeId(channel.channel.type),
-                    channelType: channel.channel.type,
-                    channel: channel.channel.channel,
+                    channelTypeId: this.getChannelTypeId(serviceChannel.type),
+                    channelType: serviceChannel.type,
+                    channel: serviceChannel.channel,
                     type: typeof (channel as any)['type'] !== 'number' ? null : (channel as any)['type'],
                 });
             }
@@ -119,12 +121,16 @@ export default class ChannelDB implements IChannelDB {
      * ChannelTypeId を取得する
      * @paramChannelTypeId
      */
-    private getChannelTypeId(type: mapid.ChannelType): number {
+    private getChannelTypeId(type: string): number {
         switch (type) {
             case 'GR':
                 return 0;
+            case 'GR-ALT':
+                return 44;
             case 'BS':
                 return 1;
+            case 'BS4K':
+                return 45;
             case 'CS':
                 return 2;
             case 'SKY':
@@ -211,7 +217,7 @@ export default class ChannelDB implements IChannelDB {
                 return 43;
 
             default:
-                return 44;
+                return 46;
         }
     }
 

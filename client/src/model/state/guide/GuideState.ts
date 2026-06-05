@@ -3,6 +3,7 @@ import { IGuideGenreSettingStorageModel, IGuideGenreSettingValue } from '@/model
 import { inject, injectable } from 'inversify';
 import * as apid from '../../../../../api';
 import DateUtil from '../../../util/DateUtil';
+import ChannelTypeUtil from '../../../util/ChannelTypeUtil';
 import IScheduleApiModel from '../../api/schedule/IScheduleApiModel';
 import { ISettingStorageModel } from '../../storage/setting/ISettingStorageModel';
 import IGuideProgramDialogState, { ProgramDialogOpenOption } from './IGuideProgramDialogState';
@@ -93,102 +94,21 @@ class GuideState implements IGuideState {
             // 表示時刻長を記録
             this.timeLength = option.length;
 
-            const scheduleOption: apid.ScheduleOption = {
+            const scheduleOption = {
                 startAt,
                 endAt,
                 isHalfWidth: option.isHalfWidth,
-                GR: false,
-                BS: false,
-                CS: false,
-                SKY: false,
-                NW1: false,
-                NW2: false,
-                NW3: false,
-                NW4: false,
-                NW5: false,
-                NW6: false,
-                NW7: false,
-                NW8: false,
-                NW9: false,
-                NW10: false,
-                NW11: false,
-                NW12: false,
-                NW13: false,
-                NW14: false,
-                NW15: false,
-                NW16: false,
-                NW17: false,
-                NW18: false,
-                NW19: false,
-                NW20: false,
-                NW21: false,
-                NW22: false,
-                NW23: false,
-                NW24: false,
-                NW25: false,
-                NW26: false,
-                NW27: false,
-                NW28: false,
-                NW29: false,
-                NW30: false,
-                NW31: false,
-                NW32: false,
-                NW33: false,
-                NW34: false,
-                NW35: false,
-                NW36: false,
-                NW37: false,
-                NW38: false,
-                NW39: false,
-                NW40: false,
-            };
+            } as apid.ScheduleOption;
+
+            for (const type of ChannelTypeUtil.CHANNEL_TYPES) {
+                scheduleOption[type] = false;
+            }
 
             // 放送波設定
             if (typeof option.type === 'undefined') {
-                scheduleOption.GR = true;
-                scheduleOption.BS = true;
-                scheduleOption.CS = true;
-                scheduleOption.SKY = true;
-                scheduleOption.NW1 = true;
-                scheduleOption.NW2 = true;
-                scheduleOption.NW3 = true;
-                scheduleOption.NW4 = true;
-                scheduleOption.NW5 = true;
-                scheduleOption.NW6 = true;
-                scheduleOption.NW7 = true;
-                scheduleOption.NW8 = true;
-                scheduleOption.NW9 = true;
-                scheduleOption.NW10 = true;
-                scheduleOption.NW11 = true;
-                scheduleOption.NW12 = true;
-                scheduleOption.NW13 = true;
-                scheduleOption.NW14 = true;
-                scheduleOption.NW15 = true;
-                scheduleOption.NW16 = true;
-                scheduleOption.NW17 = true;
-                scheduleOption.NW18 = true;
-                scheduleOption.NW19 = true;
-                scheduleOption.NW20 = true;
-                scheduleOption.NW21 = true;
-                scheduleOption.NW22 = true;
-                scheduleOption.NW23 = true;
-                scheduleOption.NW24 = true;
-                scheduleOption.NW25 = true;
-                scheduleOption.NW26 = true;
-                scheduleOption.NW27 = true;
-                scheduleOption.NW28 = true;
-                scheduleOption.NW29 = true;
-                scheduleOption.NW30 = true;
-                scheduleOption.NW31 = true;
-                scheduleOption.NW32 = true;
-                scheduleOption.NW33 = true;
-                scheduleOption.NW34 = true;
-                scheduleOption.NW35 = true;
-                scheduleOption.NW36 = true;
-                scheduleOption.NW37 = true;
-                scheduleOption.NW38 = true;
-                scheduleOption.NW39 = true;
-                scheduleOption.NW40 = true;
+                for (const type of ChannelTypeUtil.CHANNEL_TYPES) {
+                    scheduleOption[type] = true;
+                }
             } else {
                 scheduleOption[option.type] = true;
             }
