@@ -12,6 +12,7 @@ import RecordedHistory from '../../../db/entities/RecordedHistory';
 import Reserve from '../../../db/entities/Reserve';
 import VideoFile from '../../../db/entities/VideoFile';
 import BufferedWriteStream from '../../../lib/BufferedWriteStream';
+import DataBroadcastFilterTransform from '../../../lib/DataBroadcastFilterTransform';
 import FileUtil from '../../../util/FileUtil';
 import StrUtil from '../../../util/StrUtil';
 import IDropLogFileDB from '../../db/IDropLogFileDB';
@@ -57,6 +58,7 @@ class RecorderModel implements IRecorderModel {
     private timerId: NodeJS.Timeout | null = null;
     private stream: http.IncomingMessage | null = null;
     private passThroughStreamForWrite: stream.PassThrough | null = null;
+    private dataBroadcastFilterStream: DataBroadcastFilterTransform | null = null;
     private bufferedWriteStream: BufferedWriteStream | null = null;
     private recFile: fs.WriteStream | null = null;
     private isStopPrepRec: boolean = false;
@@ -271,6 +273,20 @@ class RecorderModel implements IRecorderModel {
             }
         }
 
+        // stop data broadcast filter stream
+        if (this.dataBroadcastFilterStream !== null) {
+            try {
+                if (needesUnpip === true) {
+                    this.dataBroadcastFilterStream.unpipe();
+                }
+                this.dataBroadcastFilterStream.destroy();
+                this.dataBroadcastFilterStream = null;
+            } catch (err: any) {
+                this.log.system.error(`destroy data broadcast filter stream error: ${this.reserve.id}`);
+                this.log.system.error(err);
+            }
+        }
+
         // stop buffered write stream
         if (this.bufferedWriteStream !== null) {
             try {
@@ -382,6 +398,25 @@ class RecorderModel implements IRecorderModel {
                 `warning threshold: ${warningThreshold}%, reserveId: ${this.reserve.id}`,
         );
 
+        const createWriteDestination = (): stream.Writable => {
+            if (this.bufferedWriteStream === null) {
+                throw new Error('BufferedWriteStreamIsNull');
+            }
+
+            if (this.reserve.removeDataBroadcast === true) {
+                this.dataBroadcastFilterStream = new DataBroadcastFilterTransform({
+                    logger: this.log,
+                    reserveId: this.reserve.id,
+                });
+                this.dataBroadcastFilterStream.pipe(this.bufferedWriteStream);
+
+                return this.dataBroadcastFilterStream;
+            }
+
+            return this.bufferedWriteStream;
+        };
+        const writeDestination = createWriteDestination();
+
         // drop checker
         if (this.config.isEnabledDropCheck === true) {
             // drop checker 用に PassThrough を作成
@@ -414,12 +449,12 @@ class RecorderModel implements IRecorderModel {
                 }
             }
 
-            // stream → PassThrough → BufferedWriteStream
-            this.passThroughStreamForWrite.pipe(this.bufferedWriteStream);
+            // stream -> PassThrough -> optional data broadcast filter -> BufferedWriteStream
+            this.passThroughStreamForWrite.pipe(writeDestination);
             this.stream.pipe(this.passThroughStreamForWrite);
         } else {
-            // stream → BufferedWriteStream
-            this.stream.pipe(this.bufferedWriteStream);
+            // stream -> optional data broadcast filter -> BufferedWriteStream
+            this.stream.pipe(writeDestination);
         }
 
         return new Promise<void>((resolve: () => void, reject: (error: Error) => void) => {

@@ -291,6 +291,7 @@ export default class RuleDB implements IRuleDB {
                     ? null
                     : rule.reserveOption.periodToAvoidDuplicate,
             allowEndLack: rule.reserveOption.allowEndLack,
+            removeDataBroadcast: rule.reserveOption.removeDataBroadcast === true,
             tags: typeof rule.reserveOption.tags === 'undefined' ? null : JSON.stringify(rule.reserveOption.tags),
             parentDirectoryName: null,
             directory: null,
@@ -418,6 +419,7 @@ export default class RuleDB implements IRuleDB {
             reserveOption: {
                 enable: rule.enable,
                 allowEndLack: rule.allowEndLack,
+                removeDataBroadcast: rule.removeDataBroadcast,
                 avoidDuplicate: rule.avoidDuplicate,
             },
         };

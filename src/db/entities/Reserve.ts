@@ -43,6 +43,11 @@ export default class Reserve extends BaseEntity {
     public allowEndLack: boolean = false; // 末尾切れを許すか
 
     @Column({
+        default: false,
+    })
+    public removeDataBroadcast: boolean = false; // データ放送を削除するか
+
+    @Column({
         type: 'text',
         nullable: true,
     })

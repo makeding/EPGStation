@@ -968,6 +968,9 @@ components:
                 allowEndLack:
                     description: 末尾切れを許可するか
                     type: boolean
+                removeDataBroadcast:
+                    description: データ放送を削除するか
+                    type: boolean
                 avoidDuplicate:
                     description: 録画済みの重複番組を排除するか
                     type: boolean
@@ -1101,6 +1104,7 @@ components:
                 - isConflict
                 - isOverlap
                 - allowEndLack
+                - removeDataBroadcast
                 - isTimeSpecified
                 - isDeleteOriginalAfterEncode
                 - channelId
@@ -1119,6 +1123,8 @@ components:
                 isOverlap:
                     type: boolean
                 allowEndLack:
+                    type: boolean
+                removeDataBroadcast:
                     type: boolean
                 isTimeSpecified:
                     type: boolean

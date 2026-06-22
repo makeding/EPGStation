@@ -599,6 +599,7 @@ export default class SearchState implements ISearchState {
         this.reserveOption = {
             enable: true,
             allowEndLack: true,
+            removeDataBroadcast: false,
             avoidDuplicate: this.settingModel.getSavedValue().isCheckAvoidDuplicate,
             periodToAvoidDuplicate: null,
         };
@@ -842,6 +843,7 @@ export default class SearchState implements ISearchState {
 
         this.reserveOption.enable = reserveOption.enable;
         this.reserveOption.allowEndLack = reserveOption.allowEndLack;
+        this.reserveOption.removeDataBroadcast = reserveOption.removeDataBroadcast === true;
         this.reserveOption.avoidDuplicate = reserveOption.avoidDuplicate;
 
         if (typeof reserveOption.periodToAvoidDuplicate !== 'undefined') {
@@ -2194,6 +2196,7 @@ export default class SearchState implements ISearchState {
         const reserveOption: apid.RuleReserveOption = {
             enable: option.enable,
             allowEndLack: option.allowEndLack,
+            removeDataBroadcast: option.removeDataBroadcast,
             avoidDuplicate: option.avoidDuplicate,
         };
 

@@ -383,6 +383,7 @@ class ReservationManageModel implements IReservationManageModel {
         // リレー元の予約情報から必要な情報をセットする
         newReserve.ruleId = parentReserve.ruleId;
         newReserve.allowEndLack = parentReserve.allowEndLack;
+        newReserve.removeDataBroadcast = parentReserve.removeDataBroadcast;
         newReserve.tags = parentReserve.tags;
         newReserve.parentDirectoryName = parentReserve.parentDirectoryName;
         newReserve.directory = parentReserve.directory;
@@ -916,6 +917,7 @@ class ReservationManageModel implements IReservationManageModel {
         reserve.ruleUpdateCnt = rule.updateCnt;
         reserve.updateTime = updateTime;
         reserve.allowEndLack = rule.reserveOption.allowEndLack;
+        reserve.removeDataBroadcast = rule.reserveOption.removeDataBroadcast === true;
 
         if (typeof rule.reserveOption.tags !== 'undefined') {
             reserve.tags = JSON.stringify(rule.reserveOption.tags);

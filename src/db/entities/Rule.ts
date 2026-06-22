@@ -387,6 +387,11 @@ export default class Rule extends BaseEntity {
     public allowEndLack: boolean = true; // 末尾切れを許可するか
 
     @Column({
+        default: false,
+    })
+    public removeDataBroadcast: boolean = false; // データ放送を削除するか
+
+    @Column({
         type: 'text',
         nullable: true,
     })

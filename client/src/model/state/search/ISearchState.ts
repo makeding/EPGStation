@@ -155,6 +155,7 @@ export interface SearchResultItem {
 export interface ReserveOption {
     enable: boolean; // ルールが有効か
     allowEndLack: boolean; // 末尾切れを許可するか
+    removeDataBroadcast: boolean; // データ放送を削除するか
     avoidDuplicate: boolean; // 録画済みの重複番組を排除するか
     periodToAvoidDuplicate: number | null; // 重複を避ける期間
 }

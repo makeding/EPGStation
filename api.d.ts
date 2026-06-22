@@ -105,6 +105,7 @@ export interface ReserveItem {
     isConflict: boolean;
     isOverlap: boolean;
     allowEndLack: boolean;
+    removeDataBroadcast: boolean;
     isTimeSpecified: boolean;
     tags?: RecordedTagId[];
     /**
@@ -377,6 +378,7 @@ export interface RuleSearchOption {
 export interface RuleReserveOption {
     enable: boolean; // ルールが有効か
     allowEndLack: boolean; // 末尾切れを許可するか
+    removeDataBroadcast?: boolean; // データ放送を削除するか
     avoidDuplicate: boolean; // 録画済みの重複番組を排除するか
     periodToAvoidDuplicate?: number; // 重複を避ける期間
     tags?: RecordedTagId[]; // 録画完了後に付与する tag 設定
