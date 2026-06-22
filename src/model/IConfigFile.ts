@@ -36,6 +36,35 @@ export interface KodiInfo {
     password?: string;
 }
 
+export type NotificationEvent = 'recordingFinish' | 'recordingFailed';
+
+export interface NotificationTelegramConfig {
+    botToken: string;
+    chatId: string | number;
+    messageTemplate?: string;
+    parseMode?: 'HTML' | 'MarkdownV2';
+    disableNotification?: boolean;
+    protectContent?: boolean;
+    messageThreadId?: number;
+}
+
+export interface NotificationWebhookConfig {
+    name?: string;
+    url: string;
+    method?: 'POST' | 'PUT' | 'PATCH';
+    headers?: { [key: string]: string };
+    contentType?: string;
+    bodyTemplate?: string;
+    json?: unknown;
+    timeout?: number;
+}
+
+export interface NotificationConfig {
+    events?: NotificationEvent[];
+    telegram?: NotificationTelegramConfig;
+    webhooks?: NotificationWebhookConfig[];
+}
+
 /**
  * config ファイル形式
  */
@@ -160,6 +189,7 @@ export default interface IConfigFile {
     recordingFinishCommand?: string; // 録画終了
     recordingFailedCommand?: string; // 録画中のエラー
     encodingFinishCommand?: string; // エンコード終了
+    notification?: NotificationConfig; // 通知設定
 
     // 視聴 URL Scheme 設定
     urlscheme: {

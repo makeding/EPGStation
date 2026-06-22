@@ -6,6 +6,7 @@ import ILogger from '../ILogger';
 import ILoggerModel from '../ILoggerModel';
 import IIPCServer from '../ipc/IIPCServer';
 import IExternalCommandManageModel from '../operator/externalCommand/IExternalCommandManageModel';
+import INotificationManageModel from '../operator/notification/INotificationManageModel';
 import IRecordedManageModel from '../operator/recorded/IRecordedManageModel';
 import IRecordedTagManadeModel from '../operator/recordedTag/IRecordedTagManadeModel';
 import IRecordingManageModel from '../operator/recording/IRecordingManageModel';
@@ -38,6 +39,7 @@ export default class EventSetter implements IEventSetter {
     private recordedTagManage: IRecordedTagManadeModel;
     private thumbnailManage: IThumbnailManageModel;
     private externalCommandManage: IExternalCommandManageModel;
+    private notificationManage: INotificationManageModel;
     private ipc: IIPCServer;
     private config: IConfigFile;
 
@@ -60,6 +62,7 @@ export default class EventSetter implements IEventSetter {
         @inject('IRecordedTagManadeModel') recordedTagManage: IRecordedTagManadeModel,
         @inject('IThumbnailManageModel') thumbnailManage: IThumbnailManageModel,
         @inject('IExternalCommandManageModel') externalCommandManage: IExternalCommandManageModel,
+        @inject('INotificationManageModel') notificationManage: INotificationManageModel,
         @inject('IIPCServer') ipc: IIPCServer,
         @inject('IConfiguration') configure: IConfiguration,
     ) {
@@ -78,6 +81,7 @@ export default class EventSetter implements IEventSetter {
         this.recordedTagManage = recordedTagManage;
         this.thumbnailManage = thumbnailManage;
         this.externalCommandManage = externalCommandManage;
+        this.notificationManage = notificationManage;
         this.ipc = ipc;
         this.config = configure.getConfig();
     }
@@ -178,6 +182,7 @@ export default class EventSetter implements IEventSetter {
             this.ipc.notifyClient();
             if (recorded !== null) {
                 this.externalCommandManage.addRecordingFailedCmd(recorded);
+                this.notificationManage.addRecordingFailed(recorded);
             }
         });
 
@@ -259,6 +264,7 @@ export default class EventSetter implements IEventSetter {
 
             // コマンド実行
             this.externalCommandManage.addRecordingFinishCmd(recorded);
+            this.notificationManage.addRecordingFinish(recorded);
 
             this.ipc.notifyClient();
         });

@@ -52,6 +52,34 @@ encode:
       suffix: .mp4
       rate: 4.0
 
+# 録画通知設定
+# notification:
+#     # 省略時は recordingFinish のみ通知
+#     events:
+#         - recordingFinish
+#         # - recordingFailed
+#     telegram:
+#         botToken: '123456789:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+#         chatId: '123456789'
+#         messageTemplate: |-
+#             録画が完了しました
+#             番組: {{name}}
+#             放送局: {{channelName}}
+#             Drop: {{dropCnt}} / Error: {{errorCnt}}
+#     webhooks:
+#         - name: example
+#           url: 'https://example.com/webhook'
+#           method: POST
+#           headers:
+#               X-Event: '{{event}}'
+#           json:
+#               event: '{{event}}'
+#               recordedId: '{{recordedId}}'
+#               name: '{{name}}'
+#               channelName: '{{channelName}}'
+#               recPath: '{{recPath}}'
+#               recRelativePath: '{{recRelativePath}}'
+
 urlscheme:
     m2ts:
         ios: vlc-x-callback://x-callback-url/stream?url=PROTOCOL%3A%2F%2FADDRESS

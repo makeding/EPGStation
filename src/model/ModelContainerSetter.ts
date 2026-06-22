@@ -103,6 +103,8 @@ import MirakurunClientModel from './MirakurunClientModel';
 import ExternalCommandManageModel from './operator/externalCommand/ExternalCommandManageModel';
 import IExternalCommandManageModel from './operator/externalCommand/IExternalCommandManageModel';
 import IReserveOptionChecker from './operator/IReserveOptionChecker';
+import INotificationManageModel from './operator/notification/INotificationManageModel';
+import NotificationManageModel from './operator/notification/NotificationManageModel';
 import IRecordedManageModel from './operator/recorded/IRecordedManageModel';
 import RecordedManageModel from './operator/recorded/RecordedManageModel';
 import IRecordedTagManadeModel from './operator/recordedTag/IRecordedTagManadeModel';
@@ -275,6 +277,8 @@ export const set = (container: Container): void => {
         .bind<IExternalCommandManageModel>('IExternalCommandManageModel')
         .to(ExternalCommandManageModel)
         .inSingletonScope();
+
+    container.bind<INotificationManageModel>('INotificationManageModel').to(NotificationManageModel).inSingletonScope();
 
     container.bind<IServiceServer>('IServiceServer').to(ServiceServer).inSingletonScope();
 

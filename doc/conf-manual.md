@@ -53,6 +53,7 @@
     -   [録画終了時に外部コマンドを実行したい](#recordingfinishcommand)
     -   [録画失敗時に外部コマンドを実行したい](#recordingfailedcommand)
     -   [エンコード終了時にコマンドを実行したい](#encodingfinishcommand)
+    -   [録画完了時に Telegram や Webhook へ通知したい](#notification)
     -   [エンコードやストリーミングで使用するプロセス数の上限を変更したい](#encodeprocessnum)
     -   [同時にエンコードするプロセス数の上限を更新したい](#concurrentencodenum)
     -   [録画ファイルを自動でエンコードしたい](#encode)
@@ -814,6 +815,109 @@ recordingFailedCommand: '/usr/bin/logger recfailed'
 ```yaml
 encodingFinishCommand: '/bin/node /home/hoge/fuga.js finish'
 ```
+
+### notification
+
+-   録画完了や録画失敗時に Telegram / Webhook へ通知する設定
+-   `events` を省略した場合は `recordingFinish` のみ通知する
+
+| 子プロパティ名 | 種類   | 必須 | 説明                                        |
+| -------------- | ------ | ---- | ------------------------------------------- |
+| events         | array  | no   | `recordingFinish`, `recordingFailed`        |
+| telegram       | object | no   | Telegram Bot API の送信設定                 |
+| webhooks       | array  | no   | Webhook 送信設定。複数指定可                |
+
+#### telegram
+
+| 子プロパティ名      | 種類            | 必須 | 説明                                |
+| ------------------- | --------------- | ---- | ----------------------------------- |
+| botToken            | string          | yes  | Telegram Bot Token                  |
+| chatId              | string \| number | yes  | 送信先 chat id                      |
+| messageTemplate     | string          | no   | 送信本文テンプレート                |
+| parseMode           | string          | no   | `HTML` または `MarkdownV2`          |
+| disableNotification | boolean         | no   | サイレント通知                      |
+| protectContent      | boolean         | no   | 転送/保存制限                       |
+| messageThreadId     | number          | no   | Forum topic へ送信する場合の ID     |
+
+#### webhooks
+
+| 子プロパティ名 | 種類   | 必須 | 説明                                                |
+| -------------- | ------ | ---- | --------------------------------------------------- |
+| name           | string | no   | ログ表示用名称                                      |
+| url            | string | yes  | 送信先 URL。テンプレート利用可                      |
+| method         | string | no   | `POST`, `PUT`, `PATCH`。省略時は `POST`             |
+| headers        | object | no   | 任意 HTTP header。値にテンプレート利用可            |
+| contentType    | string | no   | `Content-Type`。省略時は JSON または text/plain     |
+| json           | object | no   | JSON body テンプレート                              |
+| bodyTemplate   | string | no   | 生 body テンプレート。`json` より優先               |
+| timeout        | number | no   | HTTP timeout (ms)。省略時は 10000                   |
+
+```yaml
+notification:
+    events:
+        - recordingFinish
+        - recordingFailed
+    telegram:
+        botToken: '123456789:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+        chatId: '123456789'
+        messageTemplate: |-
+            録画が完了しました
+            番組: {{name}}
+            放送局: {{channelName}}
+            Drop: {{dropCnt}} / Error: {{errorCnt}}
+    webhooks:
+        - name: simple-json
+          url: 'https://example.com/webhook'
+          headers:
+              X-Event: '{{event}}'
+          json:
+              event: '{{event}}'
+              recordedId: '{{recordedId}}'
+              name: '{{name}}'
+              channelName: '{{channelName}}'
+              recPath: '{{recPath}}'
+              recRelativePath: '{{recRelativePath}}'
+        - name: raw-body
+          url: 'https://example.com/text-webhook'
+          contentType: text/plain
+          bodyTemplate: 'recording finished: %NAME% (%CHANNELNAME%)'
+```
+
+-   `{{name}}` と `%NAME%` のどちらの形式でもテンプレート展開できる
+-   `json` の値全体が `{{recordedId}}` のような単一プレースホルダの場合は number / null を維持する
+-   `json` / `bodyTemplate` を省略した Webhook は、録画情報と先頭 video file 情報を含む JSON を送信する
+
+利用できる主なプレースホルダ:
+
+| camelCase           | 外部コマンド互換名      | 説明                       |
+| ------------------- | ----------------------- | -------------------------- |
+| event               | EVENT                   | 通知イベント名             |
+| recordedId          | RECORDEDID              | recorded id                |
+| reserveId           | RESERVEID               | reserve id                 |
+| ruleId              | RULEID                  | rule id                    |
+| programId           | PROGRAMID               | program id                 |
+| channelType         | CHANNELTYPE             | channel type               |
+| channelId           | CHANNELID               | channel id                 |
+| channelName         | CHANNELNAME             | 放送局名                   |
+| halfWidthChannelName| HALF_WIDTH_CHANNELNAME  | 放送局名(半角)             |
+| startAt             | STARTAT                 | 開始時刻 (UNIX time)       |
+| endAt               | ENDAT                   | 終了時刻 (UNIX time)       |
+| duration            | DURATION                | 長さ (ms)                  |
+| name                | NAME                    | 番組名                     |
+| halfWidthName       | HALF_WIDTH_NAME         | 番組名(半角)               |
+| description         | DESCRIPTION             | 番組概要                   |
+| extended            | EXTENDED                | 番組詳細                   |
+| recPath             | RECPATH                 | 録画ファイルのフルパス     |
+| recRelativePath     | REC_RELATIVE_PATH       | 録画保存先からの相対パス   |
+| recParentDirectoryName | REC_PARENT_DIRECTORY_NAME | 録画保存先名            |
+| logPath             | LOGPATH                 | ログファイルのフルパス     |
+| errorCnt            | ERROR_CNT               | エラーカウント             |
+| dropCnt             | DROP_CNT                | ドロップカウント           |
+| scramblingCnt       | SCRAMBLING_CNT          | スクランブルカウント       |
+| videoFileId         | VIDEOFILEID             | video file id              |
+| videoFileName       | VIDEOFILENAME           | video file name            |
+| videoFileType       | VIDEOFILETYPE           | video file type            |
+| videoFileSize       | VIDEOFILESIZE           | video file size            |
 
 ### encodeProcessNum
 
