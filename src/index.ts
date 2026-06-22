@@ -57,9 +57,6 @@ const init = async () => {
         }
     }
 
-    // uid, gid が設定されてから再度 log 再設定
-    logger.initialize(path.join(__dirname, '..', 'config', 'operatorLogConfig.yml'));
-
     // 接続確認
     const connectionChecker = container.get<IConnectionCheckModel>('IConnectionCheckModel');
     // wait mirakurun
@@ -97,7 +94,7 @@ const runService = async () => {
         process.argv[0],
         [path.join(__dirname, 'model', 'service', 'ServiceExecutor.js')],
         {
-            stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+            stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
         },
     );
 
@@ -111,14 +108,6 @@ const runService = async () => {
     child.once('error', () => {
         runService();
     });
-
-    // buffer が埋まらないようにする
-    if (child.stdout !== null) {
-        child.stdout.on('data', () => {});
-    }
-    if (child.stderr !== null) {
-        child.stderr.on('data', () => {});
-    }
 
     // IPC 通信設定
     const ipcServer = container.get<IIPCServer>('IIPCServer');

@@ -1,4 +1,3 @@
-import * as path from 'path';
 import 'reflect-metadata';
 import ILoggerModel from '../ILoggerModel';
 import container from '../ModelContainer';
@@ -8,7 +7,7 @@ import IEPGUpdater from './IEPGUpdater';
 containerSetter.set(container);
 
 const loggerModel = container.get<ILoggerModel>('ILoggerModel');
-loggerModel.initialize(path.join(__dirname, '..', '..', '..', 'config', 'epgUpdaterLogConfig.yml'));
+loggerModel.initialize();
 
 const log = loggerModel.getLogger();
 process.on('uncaughtException', err => {

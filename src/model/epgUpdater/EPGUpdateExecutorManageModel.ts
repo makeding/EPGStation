@@ -25,7 +25,7 @@ export default class EPGUpdateExecutorManageModel implements IEPGUpdateExecutorM
      */
     public async execute(): Promise<void> {
         const executor = child_process.spawn(process.argv[0], [path.join(__dirname, 'EPGUpdateExecutor.js')], {
-            stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+            stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
         });
 
         this.log.system.info(`start epg updater pid: ${executor.pid}`);
@@ -62,14 +62,6 @@ export default class EPGUpdateExecutorManageModel implements IEPGUpdateExecutorM
 
             this.restart(executor);
         });
-
-        // buffer が埋まらないようにする
-        if (executor.stdout !== null) {
-            executor.stdout.on('data', () => {});
-        }
-        if (executor.stderr !== null) {
-            executor.stderr.on('data', () => {});
-        }
 
         // TODO ping pong
     }
