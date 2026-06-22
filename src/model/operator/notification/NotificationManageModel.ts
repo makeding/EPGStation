@@ -4,7 +4,12 @@ import * as path from 'path';
 import Recorded from '../../../db/entities/Recorded';
 import IVideoUtil from '../../api/video/IVideoUtil';
 import IChannelDB from '../../db/IChannelDB';
-import IConfigFile, { NotificationEvent, NotificationWebhookConfig } from '../../IConfigFile';
+import IConfigFile, {
+    NotificationEvent,
+    NotificationTelegramConfig,
+    NotificationTrigger,
+    NotificationWebhookConfig,
+} from '../../IConfigFile';
 import IConfiguration from '../../IConfiguration';
 import ILogger from '../../ILogger';
 import ILoggerModel from '../../ILoggerModel';
@@ -77,6 +82,10 @@ export default class NotificationManageModel implements INotificationManageModel
         this.videoUtil = videoUtil;
     }
 
+    public addRecordingStart(recorded: Recorded): void {
+        this.addRecorded('recordingStart', recorded);
+    }
+
     public addRecordingFinish(recorded: Recorded): void {
         this.addRecorded('recordingFinish', recorded);
     }
@@ -104,15 +113,13 @@ export default class NotificationManageModel implements INotificationManageModel
             return false;
         }
 
-        if (typeof notification.telegram === 'undefined' && typeof notification.webhooks === 'undefined') {
-            return false;
-        }
+        const telegrams = notification.telegram ?? [];
+        const webhooks = notification.webhooks ?? [];
 
-        if (typeof notification.events === 'undefined') {
-            return event === 'recordingFinish';
-        }
-
-        return notification.events.includes(event);
+        return (
+            telegrams.some(telegram => this.matchTrigger(telegram.trigger, event)) ||
+            webhooks.some(webhook => this.matchTrigger(webhook.trigger, event))
+        );
     }
 
     private async notify(event: NotificationEvent, recorded: Recorded): Promise<void> {
@@ -120,16 +127,30 @@ export default class NotificationManageModel implements INotificationManageModel
         const tasks: Promise<void>[] = [];
 
         if (typeof this.config.notification?.telegram !== 'undefined') {
-            tasks.push(this.sendTelegram(context));
+            for (const telegram of this.config.notification.telegram) {
+                if (this.matchTrigger(telegram.trigger, event)) {
+                    tasks.push(this.sendTelegram(telegram, context));
+                }
+            }
         }
 
         if (typeof this.config.notification?.webhooks !== 'undefined') {
             for (const webhook of this.config.notification.webhooks) {
-                tasks.push(this.sendWebhook(webhook, context));
+                if (this.matchTrigger(webhook.trigger, event)) {
+                    tasks.push(this.sendWebhook(webhook, context));
+                }
             }
         }
 
         await Promise.all(tasks);
+    }
+
+    private matchTrigger(trigger: NotificationTrigger, event: NotificationEvent): boolean {
+        if (Array.isArray(trigger) === true) {
+            return trigger.includes(event);
+        }
+
+        return trigger === event;
     }
 
     private async createContext(event: NotificationEvent, recorded: Recorded): Promise<NotificationContext> {
@@ -264,12 +285,8 @@ export default class NotificationManageModel implements INotificationManageModel
         };
     }
 
-    private async sendTelegram(context: NotificationContext): Promise<void> {
-        const telegram = this.config.notification?.telegram;
-        if (typeof telegram === 'undefined') {
-            return;
-        }
-
+    private async sendTelegram(telegram: NotificationTelegramConfig, context: NotificationContext): Promise<void> {
+        const telegramName = telegram.name ?? 'unnamed';
         const text =
             typeof telegram.messageTemplate === 'undefined'
                 ? this.createDefaultMessage(context)
@@ -305,6 +322,7 @@ export default class NotificationManageModel implements INotificationManageModel
         }
 
         this.log.system.info(`sent telegram notification: ${context.event}`);
+        this.log.system.info(`sent telegram notification item: ${telegramName}`);
     }
 
     private async sendWebhook(webhook: NotificationWebhookConfig, context: NotificationContext): Promise<void> {
@@ -414,7 +432,7 @@ export default class NotificationManageModel implements INotificationManageModel
     }
 
     private createDefaultMessage(context: NotificationContext): string {
-        const title = context.event === 'recordingFinish' ? '録画が完了しました' : '録画に失敗しました';
+        const title = this.createDefaultTitle(context.event);
         const name = context.values.name;
         const channelName = context.values.channelName;
         const startAt = context.values.startAt;
@@ -439,6 +457,17 @@ export default class NotificationManageModel implements INotificationManageModel
 
     private formatDate(timestamp: number): string {
         return new Date(timestamp).toLocaleString();
+    }
+
+    private createDefaultTitle(event: NotificationEvent): string {
+        switch (event) {
+            case 'recordingStart':
+                return '録画を開始しました';
+            case 'recordingFailed':
+                return '録画に失敗しました';
+            case 'recordingFinish':
+                return '録画が完了しました';
+        }
     }
 
     private isAxiosError(err: unknown): err is AxiosError {

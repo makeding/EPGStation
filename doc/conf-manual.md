@@ -818,19 +818,20 @@ encodingFinishCommand: '/bin/node /home/hoge/fuga.js finish'
 
 ### notification
 
--   録画完了や録画失敗時に Telegram / Webhook へ通知する設定
--   `events` を省略した場合は `recordingFinish` のみ通知する
+-   録画開始、録画完了、録画失敗時に Telegram / Webhook へ通知する設定
+-   Telegram / Webhook の各項目に `trigger` を指定する
 
 | 子プロパティ名 | 種類   | 必須 | 説明                                        |
 | -------------- | ------ | ---- | ------------------------------------------- |
-| events         | array  | no   | `recordingFinish`, `recordingFailed`        |
-| telegram       | object | no   | Telegram Bot API の送信設定                 |
+| telegram       | array  | no   | Telegram Bot API の送信設定。複数指定可     |
 | webhooks       | array  | no   | Webhook 送信設定。複数指定可                |
 
 #### telegram
 
 | 子プロパティ名      | 種類            | 必須 | 説明                                |
 | ------------------- | --------------- | ---- | ----------------------------------- |
+| name                | string          | no   | ログ表示用名称                      |
+| trigger             | string \| array | yes  | 通知するイベント                    |
 | botToken            | string          | yes  | Telegram Bot Token                  |
 | chatId              | string \| number | yes  | 送信先 chat id                      |
 | messageTemplate     | string          | no   | 送信本文テンプレート                |
@@ -844,6 +845,7 @@ encodingFinishCommand: '/bin/node /home/hoge/fuga.js finish'
 | 子プロパティ名 | 種類   | 必須 | 説明                                                |
 | -------------- | ------ | ---- | --------------------------------------------------- |
 | name           | string | no   | ログ表示用名称                                      |
+| trigger        | string \| array | yes  | 通知するイベント                            |
 | url            | string | yes  | 送信先 URL。テンプレート利用可                      |
 | method         | string | no   | `POST`, `PUT`, `PATCH`。省略時は `POST`             |
 | headers        | object | no   | 任意 HTTP header。値にテンプレート利用可            |
@@ -854,19 +856,24 @@ encodingFinishCommand: '/bin/node /home/hoge/fuga.js finish'
 
 ```yaml
 notification:
-    events:
-        - recordingFinish
-        - recordingFailed
     telegram:
-        botToken: '123456789:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
-        chatId: '123456789'
-        messageTemplate: |-
-            録画が完了しました
-            番組: {{name}}
-            放送局: {{channelName}}
-            Drop: {{dropCnt}} / Error: {{errorCnt}}
+        - name: finish-message
+          trigger: recordingFinish
+          botToken: '123456789:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+          chatId: '123456789'
+          messageTemplate: |-
+              録画が完了しました
+              番組: {{name}}
+              放送局: {{channelName}}
+              Drop: {{dropCnt}} / Error: {{errorCnt}}
+        - name: start-message
+          trigger: recordingStart
+          botToken: '123456789:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+          chatId: '123456789'
+          messageTemplate: '録画を開始しました: {{name}}'
     webhooks:
         - name: simple-json
+          trigger: recordingFinish
           url: 'https://example.com/webhook'
           headers:
               X-Event: '{{event}}'
@@ -878,10 +885,15 @@ notification:
               recPath: '{{recPath}}'
               recRelativePath: '{{recRelativePath}}'
         - name: raw-body
+          trigger:
+              - recordingStart
+              - recordingFailed
           url: 'https://example.com/text-webhook'
           contentType: text/plain
           bodyTemplate: 'recording finished: %NAME% (%CHANNELNAME%)'
 ```
+
+-   `trigger` は `recordingStart`, `recordingFinish`, `recordingFailed` のいずれか、または配列で指定する
 
 -   `{{name}}` と `%NAME%` のどちらの形式でもテンプレート展開できる
 -   `json` の値全体が `{{recordedId}}` のような単一プレースホルダの場合は number / null を維持する

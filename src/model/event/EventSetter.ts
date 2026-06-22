@@ -175,6 +175,7 @@ export default class EventSetter implements IEventSetter {
 
             this.ipc.notifyClient();
             this.externalCommandManage.addRecordingStartCmd(recorded);
+            this.notificationManage.addRecordingStart(recorded);
         });
 
         // 録画失敗イベント

@@ -36,9 +36,12 @@ export interface KodiInfo {
     password?: string;
 }
 
-export type NotificationEvent = 'recordingFinish' | 'recordingFailed';
+export type NotificationEvent = 'recordingStart' | 'recordingFinish' | 'recordingFailed';
+export type NotificationTrigger = NotificationEvent | NotificationEvent[];
 
 export interface NotificationTelegramConfig {
+    name?: string;
+    trigger: NotificationTrigger;
     botToken: string;
     chatId: string | number;
     messageTemplate?: string;
@@ -50,6 +53,7 @@ export interface NotificationTelegramConfig {
 
 export interface NotificationWebhookConfig {
     name?: string;
+    trigger: NotificationTrigger;
     url: string;
     method?: 'POST' | 'PUT' | 'PATCH';
     headers?: { [key: string]: string };
@@ -60,8 +64,7 @@ export interface NotificationWebhookConfig {
 }
 
 export interface NotificationConfig {
-    events?: NotificationEvent[];
-    telegram?: NotificationTelegramConfig;
+    telegram?: NotificationTelegramConfig[];
     webhooks?: NotificationWebhookConfig[];
 }
 
