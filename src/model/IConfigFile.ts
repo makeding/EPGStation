@@ -60,6 +60,7 @@ export interface NotificationWebhookConfig {
     contentType?: string;
     bodyTemplate?: string;
     json?: unknown;
+    delay?: number;
     timeout?: number;
 }
 

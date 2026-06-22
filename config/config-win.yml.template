@@ -79,6 +79,7 @@ encodingFinishCommand: 'C:\Windows\System32\cmd.exe /C node C:\rec\EPGStation\co
 #           trigger: recordingFinish
 #           url: 'https://example.com/webhook'
 #           method: POST
+#           delay: 30000
 #           headers:
 #               X-Event: '{{event}}'
 #           json:

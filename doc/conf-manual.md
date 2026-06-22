@@ -852,6 +852,7 @@ encodingFinishCommand: '/bin/node /home/hoge/fuga.js finish'
 | contentType    | string | no   | `Content-Type`。省略時は JSON または text/plain     |
 | json           | object | no   | JSON body テンプレート                              |
 | bodyTemplate   | string | no   | 生 body テンプレート。`json` より優先               |
+| delay          | number | no   | 送信前の遅延時間 (ms)。省略時は 0                  |
 | timeout        | number | no   | HTTP timeout (ms)。省略時は 10000                   |
 
 ```yaml
@@ -875,6 +876,7 @@ notification:
         - name: simple-json
           trigger: recordingFinish
           url: 'https://example.com/webhook'
+          delay: 30000
           headers:
               X-Event: '{{event}}'
           json:

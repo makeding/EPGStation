@@ -327,6 +327,11 @@ export default class NotificationManageModel implements INotificationManageModel
 
     private async sendWebhook(webhook: NotificationWebhookConfig, context: NotificationContext): Promise<void> {
         const webhookName = webhook.name ?? 'unnamed';
+        if (typeof webhook.delay !== 'undefined' && webhook.delay > 0) {
+            this.log.system.info(`delay webhook notification: ${webhookName} ${webhook.delay}ms`);
+            await this.sleep(webhook.delay);
+        }
+
         const body = this.createWebhookBody(webhook, context);
         const contentType =
             webhook.contentType ?? (typeof webhook.bodyTemplate === 'undefined' ? 'application/json' : 'text/plain');
@@ -457,6 +462,12 @@ export default class NotificationManageModel implements INotificationManageModel
 
     private formatDate(timestamp: number): string {
         return new Date(timestamp).toLocaleString();
+    }
+
+    private sleep(ms: number): Promise<void> {
+        return new Promise(resolve => {
+            setTimeout(resolve, ms);
+        });
     }
 
     private createDefaultTitle(event: NotificationEvent): string {

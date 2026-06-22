@@ -69,6 +69,7 @@ encode:
 #           trigger: recordingFinish
 #           url: 'https://example.com/webhook'
 #           method: POST
+#           delay: 30000
 #           headers:
 #               X-Event: '{{event}}'
 #           json:
