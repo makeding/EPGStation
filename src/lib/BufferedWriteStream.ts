@@ -10,9 +10,9 @@ export interface BufferedWriteStreamOptions {
 
 /**
  * BufferedWriteStream
- * 録画時の IO ピークを吸収するためのバッファ付き Transform ストリーム
+ * 録画時の IO ピークを吸収するためのバッファ付き Writable ストリーム
  */
-class BufferedWriteStream extends stream.Transform {
+class BufferedWriteStream extends stream.Writable {
     private chunks: Buffer[] = [];
     private totalBuffered: number = 0;
     private maxBufferSize: number;
@@ -56,9 +56,9 @@ class BufferedWriteStream extends stream.Transform {
     }
 
     /**
-     * Transform 実装
+     * Writable 実装
      */
-    public _transform(chunk: Buffer, _encoding: string, callback: stream.TransformCallback): void {
+    public _write(chunk: Buffer, _encoding: string, callback: (error?: Error | null) => void): void {
         // バッファに追加
         this.chunks.push(chunk);
         this.totalBuffered += chunk.length;
@@ -74,12 +74,10 @@ class BufferedWriteStream extends stream.Transform {
     }
 
     /**
-     * Flush 実装
+     * Final 実装
      */
-    public _flush(callback: stream.TransformCallback): void {
-        // 残りのバッファをフラッシュ
-        this.flushBuffer(true);
-        callback();
+    public _final(callback: (error?: Error | null) => void): void {
+        this.flushAndEndWriteStream(callback);
     }
 
     /**
@@ -122,7 +120,7 @@ class BufferedWriteStream extends stream.Transform {
     /**
      * バッファを書き込みストリームにフラッシュ
      */
-    private flushBuffer(_force: boolean = false): void {
+    private flushBuffer(): void {
         if (this.writeStream === null || this.drainPending || this.isWriting) {
             return;
         }
@@ -146,6 +144,27 @@ class BufferedWriteStream extends stream.Transform {
         }
 
         this.isWriting = false;
+    }
+
+    private flushAndEndWriteStream(callback: (error?: Error | null) => void): void {
+        const writeStream = this.writeStream;
+        if (writeStream === null) {
+            callback();
+            return;
+        }
+
+        const tryFinish = () => {
+            this.flushBuffer();
+
+            if (this.totalBuffered > 0 || this.drainPending || this.isWriting) {
+                writeStream.once('drain', tryFinish);
+                return;
+            }
+
+            writeStream.end(callback);
+        };
+
+        tryFinish();
     }
 
     /**

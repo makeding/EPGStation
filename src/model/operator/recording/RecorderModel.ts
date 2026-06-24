@@ -4,6 +4,7 @@ import * as http from 'http';
 import { inject, injectable } from 'inversify';
 import * as path from 'path';
 import * as stream from 'stream';
+import { pipeline } from 'stream/promises';
 import * as mapid from '../../../../node_modules/mirakurun/api';
 import * as apid from '../../../../api';
 import DropLogFile from '../../../db/entities/DropLogFile';
@@ -58,7 +59,6 @@ class RecorderModel implements IRecorderModel {
     private timerId: NodeJS.Timeout | null = null;
     private stream: http.IncomingMessage | null = null;
     private passThroughStreamForWrite: stream.PassThrough | null = null;
-    private dataBroadcastFilterStream: DataBroadcastFilterTransform | null = null;
     private bufferedWriteStream: BufferedWriteStream | null = null;
     private recFile: fs.WriteStream | null = null;
     private isStopPrepRec: boolean = false;
@@ -273,20 +273,6 @@ class RecorderModel implements IRecorderModel {
             }
         }
 
-        // stop data broadcast filter stream
-        if (this.dataBroadcastFilterStream !== null) {
-            try {
-                if (needesUnpip === true) {
-                    this.dataBroadcastFilterStream.unpipe();
-                }
-                this.dataBroadcastFilterStream.destroy();
-                this.dataBroadcastFilterStream = null;
-            } catch (err: any) {
-                this.log.system.error(`destroy data broadcast filter stream error: ${this.reserve.id}`);
-                this.log.system.error(err);
-            }
-        }
-
         // stop buffered write stream
         if (this.bufferedWriteStream !== null) {
             try {
@@ -297,9 +283,6 @@ class RecorderModel implements IRecorderModel {
                         `recording buffer stats at end: ${stats.percentage.toFixed(1)}% used ` +
                             `(${stats.used} bytes), reserveId: ${this.reserve.id}`,
                     );
-                }
-                if (needesUnpip === true) {
-                    this.bufferedWriteStream.unpipe();
                 }
                 this.bufferedWriteStream.destroy();
                 this.bufferedWriteStream = null;
@@ -398,25 +381,6 @@ class RecorderModel implements IRecorderModel {
                 `warning threshold: ${warningThreshold}%, reserveId: ${this.reserve.id}`,
         );
 
-        const createWriteDestination = (): stream.Writable => {
-            if (this.bufferedWriteStream === null) {
-                throw new Error('BufferedWriteStreamIsNull');
-            }
-
-            if (this.reserve.removeDataBroadcast === true) {
-                this.dataBroadcastFilterStream = new DataBroadcastFilterTransform({
-                    logger: this.log,
-                    reserveId: this.reserve.id,
-                });
-                this.dataBroadcastFilterStream.pipe(this.bufferedWriteStream);
-
-                return this.dataBroadcastFilterStream;
-            }
-
-            return this.bufferedWriteStream;
-        };
-        const writeDestination = createWriteDestination();
-
         // drop checker
         if (this.config.isEnabledDropCheck === true) {
             // drop checker 用に PassThrough を作成
@@ -449,12 +413,12 @@ class RecorderModel implements IRecorderModel {
                 }
             }
 
-            // stream -> PassThrough -> optional data broadcast filter -> BufferedWriteStream
-            this.passThroughStreamForWrite.pipe(writeDestination);
+            // stream -> PassThrough -> BufferedWriteStream
+            this.passThroughStreamForWrite.pipe(this.bufferedWriteStream);
             this.stream.pipe(this.passThroughStreamForWrite);
         } else {
-            // stream -> optional data broadcast filter -> BufferedWriteStream
-            this.stream.pipe(writeDestination);
+            // stream -> BufferedWriteStream
+            this.stream.pipe(this.bufferedWriteStream);
         }
 
         return new Promise<void>((resolve: () => void, reject: (error: Error) => void) => {
@@ -578,6 +542,13 @@ class RecorderModel implements IRecorderModel {
      */
     private async setEndProcess(s: http.IncomingMessage): Promise<void> {
         this.log.system.info(`set stream.finished: reserveId: ${this.reserve.id} recordedId: ${this.recordedId}`);
+        const writeFinishedTarget = this.bufferedWriteStream;
+        if (writeFinishedTarget === null) {
+            await this.recFailed(new Error('BufferedWriteStreamIsNull'));
+
+            return;
+        }
+
         stream.finished(s, {}, async err => {
             // 終了処理が呼ばれていたら無視する
             if (this.isCanceledCallingFinished === true) {
@@ -589,14 +560,30 @@ class RecorderModel implements IRecorderModel {
                     `stream.finished error: reserveId: ${this.reserve.id} recordedId: ${this.recordedId}`,
                 );
                 await this.recFailed(err);
-            } else {
-                await this.recEnd().catch(e => {
-                    this.log.system.fatal(
-                        `unexpected recEnd error: reserveId: ${this.reserve.id} recordedId: ${this.recordedId}`,
-                    );
-                    this.log.system.fatal(e);
-                });
             }
+        });
+
+        stream.finished(writeFinishedTarget, {}, async err => {
+            // 終了処理が呼ばれていたら無視する
+            if (this.isCanceledCallingFinished === true) {
+                return;
+            }
+
+            if (err) {
+                this.log.system.error(
+                    `write stream.finished error: reserveId: ${this.reserve.id} recordedId: ${this.recordedId}`,
+                );
+                await this.recFailed(err);
+
+                return;
+            }
+
+            await this.recEnd().catch(e => {
+                this.log.system.fatal(
+                    `unexpected recEnd error: reserveId: ${this.reserve.id} recordedId: ${this.recordedId}`,
+                );
+                this.log.system.fatal(e);
+            });
         });
     }
 
@@ -759,6 +746,15 @@ class RecorderModel implements IRecorderModel {
 
             // update video file size
             if (this.videoFileId !== null && this.videoFileFulPath !== null) {
+                if (this.reserve.removeDataBroadcast === true) {
+                    await this.removeDataBroadcastFromRecordedFile(this.videoFileFulPath).catch(err => {
+                        this.log.system.error(
+                            `remove data broadcast failed reserveId: ${this.reserve.id}, recordedId: ${this.recordedId}`,
+                        );
+                        this.log.system.error(err);
+                    });
+                }
+
                 this.recordingUtil.updateVideoFileSize(this.videoFileId).catch(err => {
                     this.log.system.error(`update file size error: ${this.videoFileId}`);
                     this.log.system.error(err);
@@ -811,6 +807,48 @@ class RecorderModel implements IRecorderModel {
         this.log.system.info(
             `recording finish reserveId: ${this.reserve.id}, recordedId: ${this.recordedId}, videoFileFulPath: ${this.videoFileFulPath}`,
         );
+    }
+
+    private async removeDataBroadcastFromRecordedFile(filePath: string): Promise<void> {
+        const sampleMode = this.reserve.programId === null ? 'start' : 'threePoint';
+        const duration = this.reserve.programId === null ? 0 : this.reserve.endAt - this.reserve.startAt;
+        const dataBroadcastPids = await DataBroadcastFilterTransform.collectDataBroadcastPidsFromFile(filePath, duration, {
+            logger: this.log,
+            reserveId: this.reserve.id,
+            sampleMode,
+        });
+
+        if (dataBroadcastPids.size === 0) {
+            this.log.system.info(`data broadcast pids not found reserveId: ${this.reserve.id}`);
+            return;
+        }
+
+        const tmpPath = `${filePath}.remove-data-broadcast.${process.pid}.${Date.now()}.tmp`;
+        this.log.system.info(
+            `remove data broadcast pids reserveId: ${this.reserve.id}, pids: ${Array.from(dataBroadcastPids).join(',')}`,
+        );
+
+        try {
+            await pipeline(
+                fs.createReadStream(filePath),
+                new DataBroadcastFilterTransform({
+                    logger: this.log,
+                    reserveId: this.reserve.id,
+                    dataBroadcastPids,
+                }),
+                fs.createWriteStream(tmpPath),
+            );
+
+            const stat = await fs.promises.stat(tmpPath);
+            if (stat.size === 0) {
+                throw new Error('RemoveDataBroadcastOutputIsEmpty');
+            }
+
+            await fs.promises.rename(tmpPath, filePath);
+        } catch (err: any) {
+            await FileUtil.unlink(tmpPath).catch(() => {});
+            throw err;
+        }
     }
 
     /**

@@ -1,9 +1,17 @@
+import * as fs from 'fs';
 import * as stream from 'stream';
 import ILogger from '../model/ILogger';
 
 interface DataBroadcastFilterTransformOptions {
     logger?: ILogger;
     reserveId?: number;
+    dataBroadcastPids?: Iterable<number>;
+}
+
+interface CollectDataBroadcastPidsOptions {
+    logger?: ILogger;
+    reserveId?: number;
+    sampleMode?: 'start' | 'threePoint';
 }
 
 interface PsiSection {
@@ -17,20 +25,64 @@ interface PsiSection {
  */
 export default class DataBroadcastFilterTransform extends stream.Transform {
     private buffer: Buffer = Buffer.alloc(0);
-    private pendingPackets: Buffer[] | null = [];
-    private pendingBytes: number = 0;
     private readonly pmtPids: Set<number> = new Set();
     private readonly dataBroadcastPids: Set<number> = new Set();
     private readonly logger?: ILogger;
     private readonly reserveId?: number;
     private hasWarnedSync: boolean = false;
-    private hasParsedPmt: boolean = false;
     private static crcTable: number[] | null = null;
 
     constructor(options: DataBroadcastFilterTransformOptions = {}) {
         super();
         this.logger = options.logger;
         this.reserveId = options.reserveId;
+        if (typeof options.dataBroadcastPids !== 'undefined') {
+            for (const pid of options.dataBroadcastPids) {
+                this.dataBroadcastPids.add(pid);
+            }
+        }
+    }
+
+    public static async collectDataBroadcastPidsFromFile(
+        filePath: string,
+        durationMs: number,
+        options: CollectDataBroadcastPidsOptions = {},
+    ): Promise<Set<number>> {
+        const stat = await fs.promises.stat(filePath);
+        if (stat.size < DataBroadcastFilterTransform.TS_PACKET_SIZE) {
+            return new Set();
+        }
+
+        const fd = await fs.promises.open(filePath, 'r');
+        const detector = new DataBroadcastFilterTransform(options);
+        detector.resume();
+        const windows =
+            options.sampleMode === 'start'
+                ? DataBroadcastFilterTransform.createStartSampleWindow(stat.size, durationMs)
+                : DataBroadcastFilterTransform.createThreePointSampleWindows(stat.size, durationMs);
+        const buffer = Buffer.alloc(DataBroadcastFilterTransform.SAMPLE_READ_SIZE);
+
+        try {
+            for (const window of windows) {
+                let position = window.start;
+                while (position < window.end) {
+                    const readLength = Math.min(buffer.length, window.end - position);
+                    const result = await fd.read(buffer, 0, readLength, position);
+                    if (result.bytesRead === 0) {
+                        break;
+                    }
+
+                    detector.write(buffer.subarray(0, result.bytesRead));
+                    position += result.bytesRead;
+                }
+
+                detector.clearPendingBytes();
+            }
+        } finally {
+            await fd.close();
+        }
+
+        return new Set(detector.dataBroadcastPids);
     }
 
     public _transform(chunk: Buffer, _encoding: string, callback: stream.TransformCallback): void {
@@ -61,21 +113,6 @@ export default class DataBroadcastFilterTransform extends stream.Transform {
             const packet = this.buffer.subarray(0, DataBroadcastFilterTransform.TS_PACKET_SIZE);
             this.buffer = this.buffer.subarray(DataBroadcastFilterTransform.TS_PACKET_SIZE);
 
-            if (this.pendingPackets !== null) {
-                this.pendingPackets.push(Buffer.from(packet));
-                this.pendingBytes += packet.length;
-                this.processPacket(packet);
-
-                if (this.hasParsedPmt === true) {
-                    outputs.push(...this.flushPendingPackets());
-                } else if (this.pendingBytes >= DataBroadcastFilterTransform.MAX_PENDING_BYTES) {
-                    this.warn('PMT was not found before startup buffer limit; flushing packets without initial filtering');
-                    outputs.push(...this.flushPendingPackets());
-                }
-
-                continue;
-            }
-
             const processed = this.processPacket(packet);
             if (processed !== null) {
                 outputs.push(processed);
@@ -89,39 +126,16 @@ export default class DataBroadcastFilterTransform extends stream.Transform {
         callback();
     }
 
-    public _flush(callback: stream.TransformCallback): void {
-        if (this.pendingPackets !== null) {
-            const outputs = this.flushPendingPackets();
-            if (outputs.length > 0) {
-                this.push(Buffer.concat(outputs));
-            }
-        }
+    private clearPendingBytes(): void {
+        this.buffer = Buffer.alloc(0);
+    }
 
+    public _flush(callback: stream.TransformCallback): void {
         if (this.buffer.length > 0) {
             this.push(this.buffer);
             this.buffer = Buffer.alloc(0);
         }
         callback();
-    }
-
-    private flushPendingPackets(): Buffer[] {
-        if (this.pendingPackets === null) {
-            return [];
-        }
-
-        const pendingPackets = this.pendingPackets;
-        this.pendingPackets = null;
-        this.pendingBytes = 0;
-
-        const outputs: Buffer[] = [];
-        for (const packet of pendingPackets) {
-            const processed = this.processPacket(packet);
-            if (processed !== null) {
-                outputs.push(processed);
-            }
-        }
-
-        return outputs;
     }
 
     private processPacket(packet: Buffer): Buffer | null {
@@ -166,7 +180,6 @@ export default class DataBroadcastFilterTransform extends stream.Transform {
         if (psi === null || psi.section[0] !== DataBroadcastFilterTransform.PMT_TABLE_ID) {
             return packet;
         }
-        this.hasParsedPmt = true;
 
         const sectionLength = DataBroadcastFilterTransform.getSectionLength(psi.section);
         if (psi.section.length < 12 || psi.section.length !== 3 + sectionLength) {
@@ -195,7 +208,10 @@ export default class DataBroadcastFilterTransform extends stream.Transform {
                 return packet;
             }
 
-            if (DataBroadcastFilterTransform.isRemovableDataStream(streamType, psi.section.subarray(pos + 5, entryEnd))) {
+            if (
+                this.dataBroadcastPids.has(elementaryPid) ||
+                DataBroadcastFilterTransform.isRemovableDataStream(streamType)
+            ) {
                 this.dataBroadcastPids.add(elementaryPid);
                 removed = true;
             } else {
@@ -320,40 +336,8 @@ export default class DataBroadcastFilterTransform extends stream.Transform {
         return ((section[1] & 0x0f) << 8) | section[2];
     }
 
-    private static isRemovableDataStream(streamType: number, esInfo: Buffer): boolean {
-        if (streamType === DataBroadcastFilterTransform.TYPE_D_STREAM_TYPE) {
-            return true;
-        }
-
-        if (streamType !== DataBroadcastFilterTransform.PES_PRIVATE_DATA_STREAM_TYPE) {
-            return false;
-        }
-
-        const componentTag = DataBroadcastFilterTransform.getComponentTag(esInfo);
-
-        return (
-            componentTag === DataBroadcastFilterTransform.SUPERIMPOSE_COMPONENT_TAG ||
-            componentTag === DataBroadcastFilterTransform.SUPERIMPOSE_1SEG_COMPONENT_TAG
-        );
-    }
-
-    private static getComponentTag(esInfo: Buffer): number | null {
-        for (let pos = 0; pos + 2 <= esInfo.length; ) {
-            const tag = esInfo[pos];
-            const length = esInfo[pos + 1];
-            const descriptorEnd = pos + 2 + length;
-            if (descriptorEnd > esInfo.length) {
-                return null;
-            }
-
-            if (tag === DataBroadcastFilterTransform.STREAM_IDENTIFIER_DESCRIPTOR && length >= 1) {
-                return esInfo[pos + 2];
-            }
-
-            pos = descriptorEnd;
-        }
-
-        return null;
+    private static isRemovableDataStream(streamType: number): boolean {
+        return streamType === DataBroadcastFilterTransform.TYPE_D_STREAM_TYPE;
     }
 
     private static crc32Mpeg(data: Buffer): number {
@@ -382,17 +366,65 @@ export default class DataBroadcastFilterTransform extends stream.Transform {
         return table;
     }
 
+    private static createStartSampleWindow(fileSize: number, durationMs: number): { start: number; end: number }[] {
+        if (durationMs <= 0) {
+            return [{ start: 0, end: Math.min(fileSize, DataBroadcastFilterTransform.START_ONLY_SAMPLE_BYTES) }];
+        }
+
+        const durationSec = durationMs / 1000;
+        const end = DataBroadcastFilterTransform.alignPacketOffset(
+            Math.ceil((fileSize * Math.min(60, durationSec)) / durationSec),
+        );
+
+        return [{ start: 0, end: Math.min(fileSize, Math.max(DataBroadcastFilterTransform.TS_PACKET_SIZE, end)) }];
+    }
+
+    private static createThreePointSampleWindows(
+        fileSize: number,
+        durationMs: number,
+    ): { start: number; end: number }[] {
+        if (durationMs <= 0) {
+            return DataBroadcastFilterTransform.createStartSampleWindow(fileSize, durationMs);
+        }
+
+        const durationSec = durationMs / 1000;
+        const startWindow = { startSec: 0, endSec: Math.min(60, durationSec) };
+        const middleSec = durationSec / 2;
+        const middleWindow = {
+            startSec: Math.max(0, middleSec - 30),
+            endSec: Math.min(durationSec, middleSec + 30),
+        };
+        const endWindow = { startSec: Math.max(0, durationSec - 60), endSec: durationSec };
+
+        return [startWindow, middleWindow, endWindow]
+            .map(window => {
+                const start = DataBroadcastFilterTransform.alignPacketOffset(
+                    Math.floor((fileSize * window.startSec) / durationSec),
+                );
+                const end = DataBroadcastFilterTransform.alignPacketOffset(
+                    Math.ceil((fileSize * window.endSec) / durationSec),
+                );
+
+                return {
+                    start,
+                    end: Math.min(fileSize, Math.max(start, end)),
+                };
+            })
+            .filter(window => window.end > window.start);
+    }
+
+    private static alignPacketOffset(offset: number): number {
+        return offset - (offset % DataBroadcastFilterTransform.TS_PACKET_SIZE);
+    }
+
     private static readonly TS_PACKET_SIZE = 188;
-    private static readonly MAX_PENDING_BYTES = 64 * 1024 * 1024;
+    private static readonly SAMPLE_READ_SIZE = 1024 * 1024;
+    private static readonly START_ONLY_SAMPLE_BYTES = 64 * 1024 * 1024;
     private static readonly SYNC_BYTE = 0x47;
     private static readonly SYNC_CHECK_COUNT = 4;
     private static readonly PAT_PID = 0x0000;
     private static readonly PAT_TABLE_ID = 0x00;
     private static readonly PMT_TABLE_ID = 0x02;
-    private static readonly PES_PRIVATE_DATA_STREAM_TYPE = 0x06;
     private static readonly TYPE_D_STREAM_TYPE = 0x0d;
-    private static readonly STREAM_IDENTIFIER_DESCRIPTOR = 0x52;
-    private static readonly SUPERIMPOSE_COMPONENT_TAG = 0x38;
-    private static readonly SUPERIMPOSE_1SEG_COMPONENT_TAG = 0x88;
     private static readonly CRC_SIZE = 4;
 }
