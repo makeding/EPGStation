@@ -1431,6 +1431,9 @@ components:
                 filename:
                     description: ビデオファイル名
                     type: string
+                relativeFilePath:
+                    description: 親ディレクトリからの相対ビデオファイルパス
+                    type: string
                 type:
                     $ref: '#/components/schemas/VideoFileType'
                 size:

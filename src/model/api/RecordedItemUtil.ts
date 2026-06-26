@@ -126,6 +126,7 @@ export default class RecordedItemUtil implements IRecordedItemUtil {
                     id: v.id,
                     name: v.name,
                     filename: path.basename(v.filePath),
+                    relativeFilePath: `/${v.filePath.replace(/^\/+/, '')}`,
                     type: v.type as apid.VideoFileType,
                     size: v.size,
                 };

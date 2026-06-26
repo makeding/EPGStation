@@ -477,6 +477,7 @@ export interface VideoFile {
     id: VideoFileId;
     name: string;
     filename: string;
+    relativeFilePath: string;
     type: VideoFileType;
     size: number;
 }
