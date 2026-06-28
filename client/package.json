@@ -12,7 +12,7 @@
     },
     "dependencies": {
         "@mdi/font": "7.4.47",
-        "aribb24.js": "1.11.2",
+        "aribb24.js": "1.11.3",
         "aribb62.js": "0.1.3",
         "axios": "1.6.8",
         "eventemitter2": "6.4.9",

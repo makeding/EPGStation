@@ -225,6 +225,7 @@ export default class LiveMpegTsVideo extends BaseVideo {
         }
 
         if (this.b62Renderer !== null) {
+            this.setB62OverlayVisible(true);
             this.b62Renderer.startClock();
             this.b62Renderer.render();
         }
@@ -246,8 +247,15 @@ export default class LiveMpegTsVideo extends BaseVideo {
         }
 
         if (this.b62Renderer !== null) {
-            this.b62Renderer.clear();
+            this.setB62OverlayVisible(false);
             this.b62Renderer.stopClock();
+        }
+    }
+
+    private setB62OverlayVisible(isVisible: boolean): void {
+        const overlay = this.$refs.b62Overlay as HTMLElement | undefined;
+        if (typeof overlay !== 'undefined') {
+            overlay.style.display = isVisible ? '' : 'none';
         }
     }
 
