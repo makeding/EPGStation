@@ -3,6 +3,7 @@ import IStorageBaseModel from '../IStorageBaseModel';
 export interface IGuideProgramDialogSettingValue {
     encode: string;
     isDeleteOriginalAfterEncode: boolean;
+    removeDataBroadcast: boolean;
 }
 
 export const NONE_ENCODE_OPTION = 'TS';

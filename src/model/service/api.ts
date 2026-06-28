@@ -1,6 +1,8 @@
 import * as express from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
+import { Readable } from 'stream';
+import * as fst from '../../lib/TailStream';
 import IPlayList from '../api/IPlayList';
 
 export interface IError {
@@ -67,6 +69,7 @@ export const responseFile = (
     filePath: string,
     mime: string,
     download = false,
+    chase = false,
 ): void => {
     const stat = fs.statSync(filePath);
     if (stat.isDirectory()) {
@@ -84,6 +87,26 @@ export const responseFile = (
     }
 
     const rangeRequest = readRangeHeader(req.headers['range'], stat.size);
+    if (chase === true && download === false) {
+        const start = rangeRequest === null ? 0 : rangeRequest.Start;
+        responseHeaders['Cache-Control'] = 'private, no-cache, no-store, must-revalidate';
+        responseHeaders['Expires'] = '-1';
+        responseHeaders['Pragma'] = 'no-cache';
+        sendResponse(
+            200,
+            req,
+            res,
+            responseHeaders,
+            req.method === 'HEAD'
+                ? null
+                : fst.createReadStream(filePath, {
+                      start,
+                      idleCloseMs: 15000,
+                  }),
+        );
+
+        return;
+    }
 
     if (rangeRequest === null) {
         responseHeaders['Content-Length'] = stat.size;
@@ -147,7 +170,7 @@ const sendResponse = (
     res: express.Response,
     // eslint-disable-next-line @typescript-eslint/ban-types
     responseHeaders: {},
-    readable: fs.ReadStream | null,
+    readable: Readable | null,
 ): void => {
     res.status(code);
     res.set(responseHeaders);
@@ -160,12 +183,18 @@ const sendResponse = (
         });
 
         readable.on('end', () => {
-            readable.close(); // ファイルを開放する
+            if (readable instanceof fs.ReadStream) {
+                readable.close(); // ファイルを開放する
+            }
         });
 
         // 接続切断時もファイルを開放する
         req.on('close', () => {
-            readable.close();
+            if (readable instanceof fs.ReadStream) {
+                readable.close();
+            } else {
+                readable.destroy();
+            }
         });
     }
 };

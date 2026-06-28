@@ -43,12 +43,18 @@ export default class VideoApiModel implements IVideoApiModel {
      */
     public async getFullFilePath(videoFileId: apid.VideoFileId): Promise<VideoFilePathInfo | null> {
         const fullPath = await this.videoUtil.getFullFilePathFromId(videoFileId);
+        const videoFile = await this.videoFileDB.findId(videoFileId);
+        const recorded =
+            videoFile === null || typeof videoFile.recordedId === 'undefined'
+                ? null
+                : await this.recordedDB.findId(videoFile.recordedId);
 
         return fullPath === null
             ? null
             : {
                   path: fullPath,
                   mime: await this.createMime(fullPath),
+                  isRecording: recorded?.isRecording === true,
               };
     }
 

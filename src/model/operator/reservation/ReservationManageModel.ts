@@ -339,6 +339,7 @@ class ReservationManageModel implements IReservationManageModel {
     private setManualReserveOption(option: apid.ManualReserveOption, newReserve: Reserve): void {
         // option から必要な情報をセットする
         newReserve.allowEndLack = option.allowEndLack;
+        newReserve.removeDataBroadcast = option.removeDataBroadcast === true;
         if (typeof option.tags !== 'undefined') {
             newReserve.tags = JSON.stringify(option.tags);
         }
@@ -1454,6 +1455,7 @@ class ReservationManageModel implements IReservationManageModel {
 
         // option から必要な情報をセットする
         newReserve.allowEndLack = option.allowEndLack;
+        newReserve.removeDataBroadcast = option.removeDataBroadcast === true;
         if (typeof option.tags !== 'undefined') {
             newReserve.tags = JSON.stringify(option.tags);
         }

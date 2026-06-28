@@ -43,6 +43,7 @@ export default class WatchRecordedStreaming extends Vue {
         this.recordedId = typeof this.$route.query.recordedId !== 'string' ? null : parseInt(this.$route.query.recordedId, 10);
         const streamingType = typeof this.$route.query.streamingType !== 'string' ? null : this.$route.query.streamingType;
         const streamType = typeof this.$route.query.streamType !== 'string' || this.$route.query.streamType !== 'mmts' ? 'mse' : this.$route.query.streamType;
+        const isChase = this.$route.query.isChase === 'true';
         const mode = typeof this.$route.query.mode !== 'string' ? null : parseInt(this.$route.query.mode, 10);
 
         this.$nextTick(async () => {
@@ -57,9 +58,9 @@ export default class WatchRecordedStreaming extends Vue {
                 } else if (streamingType === 'direct' || streamingType === 'tlv') {
                     this.videoParam = {
                         type: 'LiveMpegTs',
-                        src: `${window.location.origin}${Util.getSubDirectory()}/api/videos/${videoFileId}`,
+                        src: `${window.location.origin}${Util.getSubDirectory()}/api/videos/${videoFileId}?isChase=${isChase ? 'true' : 'false'}`,
                         streamType: streamType,
-                        isLive: false,
+                        isLive: isChase,
                     };
                 } else {
                     this.videoParam = {

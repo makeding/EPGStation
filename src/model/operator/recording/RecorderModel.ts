@@ -810,6 +810,7 @@ class RecorderModel implements IRecorderModel {
     }
 
     private async removeDataBroadcastFromRecordedFile(filePath: string): Promise<void> {
+        const beforeStat = await fs.promises.stat(filePath);
         const sampleMode = this.reserve.programId === null ? 'start' : 'threePoint';
         const duration = this.reserve.programId === null ? 0 : this.reserve.endAt - this.reserve.startAt;
         const dataBroadcastPids = await DataBroadcastFilterTransform.collectDataBroadcastPidsFromFile(filePath, duration, {
@@ -845,6 +846,13 @@ class RecorderModel implements IRecorderModel {
             }
 
             await fs.promises.rename(tmpPath, filePath);
+            const removedBytes = beforeStat.size - stat.size;
+            const removedPercent = beforeStat.size === 0 ? 0 : (removedBytes / beforeStat.size) * 100;
+            this.log.system.info(
+                `remove data broadcast done reserveId: ${this.reserve.id}, before: ${beforeStat.size}, after: ${
+                    stat.size
+                }, removed: ${removedBytes} (${removedPercent.toFixed(3)}%)`,
+            );
         } catch (err: any) {
             await FileUtil.unlink(tmpPath).catch(() => {});
             throw err;

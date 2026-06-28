@@ -18,6 +18,7 @@ import container from '../model/ModelContainer';
 
 export interface TailStreamOption extends ReadableOptions {
     start?: number;
+    idleCloseMs?: number;
 }
 
 class TailStream extends Readable {
@@ -30,6 +31,7 @@ class TailStream extends Readable {
     private checkFileTimer: NodeJS.Timeout | null = null;
     private readPending: number = 0;
     private fd: number = 0;
+    private idleCloseMs: number;
 
     private log: ILogger;
 
@@ -38,6 +40,7 @@ class TailStream extends Readable {
 
         this.filePath = filename;
         this.offset = option.start || 0;
+        this.idleCloseMs = option.idleCloseMs || 1000;
 
         this.log = container.get<ILoggerModel>('ILoggerModel').getLogger();
 
@@ -173,7 +176,7 @@ class TailStream extends Readable {
             } else {
                 this.close();
             }
-        }, 1000);
+        }, this.idleCloseMs);
     }
 
     private checkIdle(): void {

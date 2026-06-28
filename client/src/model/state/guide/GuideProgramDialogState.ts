@@ -226,6 +226,7 @@ export default class GuideProgramDialogState implements IGuideProgramDialogState
         const option: apid.ManualReserveOption = {
             programId: this.programId,
             allowEndLack: true,
+            removeDataBroadcast: this.setting.tmp.removeDataBroadcast,
         };
 
         if (this.setting.tmp.encode !== NONE_ENCODE_OPTION) {

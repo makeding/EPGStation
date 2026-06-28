@@ -32,6 +32,7 @@
                 <div class="pa-2 encode-action">
                     <div v-if="dialogState.reserve === null" class="overflow-x-hidden">
                         <div class="d-flex align-center justify-end">
+                            <v-checkbox class="mx-1 my-0 pr-2" label="データ放送を削除" v-model="dialogSetting.tmp.removeDataBroadcast"></v-checkbox>
                             <v-checkbox class="mx-1 my-0 pr-2" label="元ファイル削除" v-model="dialogSetting.tmp.isDeleteOriginalAfterEncode"></v-checkbox>
                             <v-select :items="dialogState.getEncodeList()" v-model="dialogSetting.tmp.encode" :menu-props="{ auto: true }" class="encode-selector"></v-select>
                         </div>

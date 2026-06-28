@@ -15,7 +15,14 @@ export const get: Operation = async (req, res) => {
                 message: 'video file is not found',
             });
         } else {
-            api.responseFile(req, res, fileInfo.path, fileInfo.mime, req.query.isDownload as any as boolean);
+            api.responseFile(
+                req,
+                res,
+                fileInfo.path,
+                fileInfo.mime,
+                req.query.isDownload as any as boolean,
+                req.query.isChase === 'true' && fileInfo.isRecording === true,
+            );
         }
     } catch (err: any) {
         api.responseServerError(res, err.message);
@@ -32,6 +39,14 @@ get.apiDoc = {
         },
         {
             $ref: '#/components/parameters/IsDownload',
+        },
+        {
+            name: 'isChase',
+            in: 'query',
+            description: '録画中ファイルを追いかけ再生するか',
+            schema: {
+                type: 'boolean',
+            },
         },
     ],
     responses: {

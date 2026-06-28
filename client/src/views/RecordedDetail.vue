@@ -209,6 +209,7 @@ export default class RecordedDetail extends Vue {
                 streamingType: 'direct',
                 mode: '0',
                 streamType: streamType,
+                isChase: this.recorded.recordedItem.isRecording === true ? 'true' : 'false',
             },
         });
     }

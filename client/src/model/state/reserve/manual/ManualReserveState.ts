@@ -21,6 +21,7 @@ export default class ManualReserveState implements IManualReserveState {
     };
     public reserveOption: ManualReserveOption = {
         allowEndLack: true,
+        removeDataBroadcast: false,
     };
     public saveOption: ManualSaveOption = {
         parentDirectoryName: null,
@@ -79,6 +80,7 @@ export default class ManualReserveState implements IManualReserveState {
 
         this.reserveOption = {
             allowEndLack: true,
+            removeDataBroadcast: false,
         };
 
         this.saveOption = {
@@ -135,6 +137,7 @@ export default class ManualReserveState implements IManualReserveState {
         }
 
         this.reserveOption.allowEndLack = reserveItem.allowEndLack;
+        this.reserveOption.removeDataBroadcast = reserveItem.removeDataBroadcast === true;
         if (typeof reserveItem.parentDirectoryName !== 'undefined') {
             this.saveOption.parentDirectoryName = reserveItem.parentDirectoryName;
         }
@@ -399,6 +402,7 @@ export default class ManualReserveState implements IManualReserveState {
     private createManualReserveOption(): apid.ManualReserveOption {
         const result: apid.ManualReserveOption = {
             allowEndLack: this.reserveOption.allowEndLack,
+            removeDataBroadcast: this.reserveOption.removeDataBroadcast,
         };
         if (this.isTimeSpecification === true) {
             // 時刻予約
@@ -450,6 +454,7 @@ export default class ManualReserveState implements IManualReserveState {
     private createEditManualReserveOption(): apid.EditManualReserveOption {
         const result: apid.EditManualReserveOption = {
             allowEndLack: this.reserveOption.allowEndLack,
+            removeDataBroadcast: this.reserveOption.removeDataBroadcast,
         };
 
         // 保存オプション

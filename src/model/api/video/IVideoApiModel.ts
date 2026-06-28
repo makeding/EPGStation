@@ -4,6 +4,7 @@ import IPlayList from '../IPlayList';
 export interface VideoFilePathInfo {
     path: string;
     mime: string;
+    isRecording: boolean;
 }
 
 export default interface IVideoApiModel {

@@ -40,6 +40,7 @@ export interface TimeSpecifiedOption {
  */
 export interface ManualReserveOption {
     allowEndLack: boolean; // 末尾切れを許可するか
+    removeDataBroadcast: boolean; // データ放送を削除するか
 }
 
 /**

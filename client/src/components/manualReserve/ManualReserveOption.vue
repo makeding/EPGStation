@@ -8,6 +8,7 @@
                         <SearchOptionRow>
                             <div class="d-flex flex-wrap">
                                 <v-checkbox class="mx-1 my-0" v-model="manualReserveState.reserveOption.allowEndLack" label="状況に応じて末尾がかけることを許可"></v-checkbox>
+                                <v-checkbox class="mx-1 my-0" v-model="manualReserveState.reserveOption.removeDataBroadcast" label="データ放送を削除"></v-checkbox>
                             </div>
                         </SearchOptionRow>
                     </v-expansion-panel-content>

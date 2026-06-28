@@ -50,6 +50,7 @@ export interface ChannelItem {
  */
 export interface EditManualReserveOption {
     allowEndLack: boolean; // 末尾切れを許すか
+    removeDataBroadcast: boolean; // データ放送を削除するか
     tags?: RecordedTagId[];
     saveOption?: ReserveSaveOption;
     encodeOption?: ReserveEncodedOption;
