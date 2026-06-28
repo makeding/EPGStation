@@ -25,7 +25,7 @@ export default class LiveMpegTsVideo extends BaseVideo {
     public streamType!: LiveMpegTsStreamType;
 
     private snackbarState: ISnackbarState = container.get<ISnackbarState>('ISnackbarState');
-    private mmtsPlayer: Mpegts.Player | null = null;
+    private mmtsPlayer: ReturnType<typeof Mmts.createPlayer> | null = null;
     private captionRenderer: aribb24js.CanvasRenderer | null = null;
     private superimposeRenderer: aribb24js.CanvasRenderer | null = null;
     private b62Renderer: B62TTMLRenderer | null = null;
@@ -86,7 +86,7 @@ export default class LiveMpegTsVideo extends BaseVideo {
 
         // mmts.js の設定
         Mmts.LoggingControl.enableVerbose = true;
-        const mmtsConfig: Mpegts.Config = {
+        const mmtsConfig: Parameters<typeof Mmts.createPlayer>[1] = {
             enableWorker: true,
             liveBufferLatencyChasing: true,
             liveBufferLatencyMinRemain: 1.0,
@@ -128,7 +128,7 @@ export default class LiveMpegTsVideo extends BaseVideo {
          * https://twitter.com/magicxqq/status/1381813912539066373
          * https://github.com/l3tnun/EPGStation/commit/352bf9a69fdd0848295afb91859e1a402b623212#commitcomment-50407815
          */
-        this.mmtsPlayer.on(Mmts.Events.PES_PRIVATE_DATA_ARRIVED, data => {
+        this.mmtsPlayer.on(Mmts.Events.PES_PRIVATE_DATA_ARRIVED, (data: any) => {
             if (data.stream_id === 0xbd && data.data[0] === 0x80 && this.captionRenderer !== null) {
                 // private_stream_1, caption
                 this.captionRenderer.pushData(data.pid, data.data, data.pts / 1000);
@@ -159,7 +159,7 @@ export default class LiveMpegTsVideo extends BaseVideo {
         });
 
         if (this.mmtsPlayer !== null) {
-            this.mmtsPlayer.on(Mmts.Events.MMTS_SUBTITLE_DATA_ARRIVED, data => {
+            this.mmtsPlayer.on(Mmts.Events.MMTS_SUBTITLE_DATA_ARRIVED, (data: any) => {
                 if (this.b62Renderer !== null) {
                     this.b62Renderer.push(data);
                 }
