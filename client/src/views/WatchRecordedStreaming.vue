@@ -4,7 +4,7 @@
         <transition name="page">
             <div class="video-container-wrap mx-auto">
                 <VideoContainer v-if="videoParam !== null" v-bind:videoParam="videoParam"></VideoContainer>
-                <WatchOnRecordedInfoCard v-if="videoParam !== null" v-bind:recordedId="videoParam.recordedId"></WatchOnRecordedInfoCard>
+                <WatchOnRecordedInfoCard v-if="recordedId !== null" v-bind:recordedId="recordedId"></WatchOnRecordedInfoCard>
                 <div style="visibility: hidden">dummy</div>
             </div>
         </transition>
@@ -18,6 +18,7 @@ import VideoContainer from '@/components/video/VideoContainer.vue';
 import * as VideoParam from '@/components/video/ViedoParam';
 import container from '@/model/ModelContainer';
 import IScrollPositionState from '@/model/state/IScrollPositionState';
+import Util from '@/util/Util';
 import { Component, Vue, Watch } from 'vue-property-decorator';
 import * as apid from '../../../api';
 
@@ -31,30 +32,39 @@ Component.registerHooks(['beforeRouteUpdate', 'beforeRouteLeave']);
     },
 })
 export default class WatchRecordedStreaming extends Vue {
-    public videoParam: VideoParam.RecordedStreamingParam | VideoParam.RecordedHLSParam | null = null;
+    public videoParam: VideoParam.RecordedStreamingParam | VideoParam.RecordedHLSParam | VideoParam.LiveMpegTsVideoParam | null = null;
+    public recordedId: apid.RecordedId | null = null;
     private scrollState: IScrollPositionState = container.get<IScrollPositionState>('IScrollPositionState');
 
     @Watch('$route', { immediate: true, deep: true })
     public onUrlChange(): void {
         // 視聴パラメータセット
         const videoFileId = parseInt(this.$route.params.id, 10);
-        const recordedId = typeof this.$route.query.recordedId !== 'string' ? null : parseInt(this.$route.query.recordedId, 10);
+        this.recordedId = typeof this.$route.query.recordedId !== 'string' ? null : parseInt(this.$route.query.recordedId, 10);
         const streamingType = typeof this.$route.query.streamingType !== 'string' ? null : this.$route.query.streamingType;
+        const streamType = typeof this.$route.query.streamType !== 'string' || this.$route.query.streamType !== 'mmts' ? 'mse' : this.$route.query.streamType;
         const mode = typeof this.$route.query.mode !== 'string' ? null : parseInt(this.$route.query.mode, 10);
 
         this.$nextTick(async () => {
-            if (videoFileId !== null && recordedId !== null && streamingType !== null && mode !== null) {
+            if (videoFileId !== null && this.recordedId !== null && streamingType !== null && mode !== null) {
                 if (streamingType === 'hls') {
                     this.videoParam = {
                         type: 'RecordedHLS',
-                        recordedId: recordedId,
+                        recordedId: this.recordedId,
                         videoFileId: videoFileId,
                         mode: mode,
+                    };
+                } else if (streamingType === 'tlv') {
+                    this.videoParam = {
+                        type: 'LiveMpegTs',
+                        src: `${window.location.origin}${Util.getSubDirectory()}/api/videos/${videoFileId}`,
+                        streamType: streamType,
+                        isLive: false,
                     };
                 } else {
                     this.videoParam = {
                         type: 'RecordedStreaming',
-                        recordedId: recordedId,
+                        recordedId: this.recordedId,
                         videoFileId: videoFileId,
                         streamingType: streamingType,
                         mode: mode,

@@ -64,6 +64,8 @@ export default class VideoApiModel implements IVideoApiModel {
         }
 
         switch (path.extname(filePath)) {
+            case '.mmts':
+                return 'video/mmts';
             case '.m2ts':
             case '.ts':
                 return 'video/mp2t';

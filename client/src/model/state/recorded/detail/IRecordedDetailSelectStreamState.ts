@@ -1,6 +1,6 @@
 import * as apid from '../../../../../../api';
 
-export type RecordedStreamType = 'WebM' | 'MP4' | 'HLS';
+export type RecordedStreamType = 'WebM' | 'MP4' | 'HLS' | 'TLV';
 
 export interface StreamConfigItem {
     text: string;
@@ -14,9 +14,10 @@ export default interface IRecordedDetailSelectStreamState {
     selectedStreamType: RecordedStreamType | undefined;
     selectedStreamMode: number | undefined;
     title: string | null;
-    open(videoFile: apid.VideoFile, recordedId: apid.RecordedId): void;
+    open(videoFile: apid.VideoFile, recorded: apid.RecordedItem): void;
     close(): void;
     updateModeItems(): void;
     getVideoFileId(): apid.VideoFileId | null;
     getRecordedId(): apid.RecordedId | null;
+    getDirectStreamType(): 'mse' | 'mmts' | null;
 }

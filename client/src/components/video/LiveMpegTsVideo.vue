@@ -24,6 +24,9 @@ export default class LiveMpegTsVideo extends BaseVideo {
     @Prop({ required: false, default: 'mse' })
     public streamType!: LiveMpegTsStreamType;
 
+    @Prop({ required: false, default: true })
+    public isLive!: boolean;
+
     private snackbarState: ISnackbarState = container.get<ISnackbarState>('ISnackbarState');
     private mmtsPlayer: ReturnType<typeof Mmts.createPlayer> | null = null;
     private captionRenderer: aribb24js.CanvasRenderer | null = null;
@@ -67,7 +70,8 @@ export default class LiveMpegTsVideo extends BaseVideo {
      */
     protected initVideoSetting(): void {
         // 対応しているか確認
-        if (Mmts.isSupported() === false || Mmts.getFeatureList().mseLivePlayback === false) {
+        const featureList = Mmts.getFeatureList();
+        if (Mmts.isSupported() === false || (this.isLive === true ? featureList.mseLivePlayback : featureList.msePlayback) === false) {
             this.snackbarState.open({
                 color: 'error',
                 text: '非対応ブラウザーです。',
@@ -95,7 +99,7 @@ export default class LiveMpegTsVideo extends BaseVideo {
         this.mmtsPlayer = Mmts.createPlayer(
             {
                 type: this.streamType,
-                isLive: true,
+                isLive: this.isLive,
                 url: this.videoSrc,
             },
             mmtsConfig,
@@ -155,7 +159,7 @@ export default class LiveMpegTsVideo extends BaseVideo {
         this.b62Renderer = new B62TTMLRenderer({
             mediaElement: this.video,
             overlayElement: overlay,
-            isLive: true,
+            isLive: this.isLive,
         });
 
         if (this.mmtsPlayer !== null) {

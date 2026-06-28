@@ -178,6 +178,7 @@
                     ref="video"
                     v-bind:videoSrc.sync="videoParam.src"
                     v-bind:streamType="videoParam.streamType"
+                    v-bind:isLive="videoParam.isLive"
                     v-on:timeupdate="onTimeupdate"
                     v-on:waiting="onWaiting"
                     v-on:loadeddata="onLoadeddata"

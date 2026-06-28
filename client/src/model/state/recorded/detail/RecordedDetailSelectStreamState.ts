@@ -1,7 +1,9 @@
 import { IRecordedSelectStreamSettingStorageModel } from '@/model/storage/recorded/IRecordedSelectStreamSettingStorageModel';
 import { inject, injectable } from 'inversify';
 import * as apid from '../../../../../../api';
+import IChannelModel from '../../../channels/IChannelModel';
 import IServerConfigModel from '../../../serverConfig/IServerConfigModel';
+import { ISettingStorageModel } from '../../../storage/setting/ISettingStorageModel';
 import IRecordedDetailSelectStreamState, { RecordedStreamType, StreamConfigItem } from './IRecordedDetailSelectStreamState';
 
 @injectable()
@@ -14,26 +16,35 @@ export default class RecordedDetailSelectStreamState implements IRecordedDetailS
     public selectedStreamMode: number | undefined;
 
     private serverConfig: IServerConfigModel;
+    private channelModel: IChannelModel;
+    private settingModel: ISettingStorageModel;
     private streamSelectSetting: IRecordedSelectStreamSettingStorageModel;
     private streamConfig: { [type: string]: string[] } = {};
     private videoFileId: apid.VideoFileId | null = null;
     private recordedId: apid.RecordedId | null = null;
+    private directStreamType: 'mse' | 'mmts' | null = null;
 
     constructor(
         @inject('IServerConfigModel') serverConfig: IServerConfigModel,
+        @inject('IChannelModel') channelModel: IChannelModel,
+        @inject('ISettingStorageModel') settingModel: ISettingStorageModel,
         @inject('IRecordedSelectStreamSettingStorageModel')
         streamSelectSetting: IRecordedSelectStreamSettingStorageModel,
     ) {
         this.serverConfig = serverConfig;
+        this.channelModel = channelModel;
+        this.settingModel = settingModel;
         this.streamSelectSetting = streamSelectSetting;
     }
 
-    public open(videoFile: apid.VideoFile, recordedId: apid.RecordedId): void {
+    public open(videoFile: apid.VideoFile, recorded: apid.RecordedItem): void {
         this.isOpen = true;
 
         this.title = videoFile.name;
         this.videoFileId = videoFile.id;
-        this.recordedId = recordedId;
+        this.recordedId = recorded.id;
+        this.directStreamType = null;
+        this.streamTypeItems = [];
         this.streamModeItems = [];
         this.streamConfig = {};
         const config = this.serverConfig.getConfig();
@@ -43,6 +54,10 @@ export default class RecordedDetailSelectStreamState implements IRecordedDetailS
             const ts = config.streamConfig.recorded.ts;
             const encoded = config.streamConfig.recorded.encoded;
             if (videoFile.type === 'ts' && config.isEnableTSRecordedStream === true && typeof ts !== 'undefined') {
+                this.directStreamType = this.createDirectStreamType(videoFile, recorded);
+                this.streamTypeItems.push('TLV');
+                this.streamConfig['TLV'] = ['Direct'];
+
                 // webm
                 if (typeof ts.webm !== 'undefined' && ts.webm.length > 0) {
                     this.streamTypeItems.push('WebM');
@@ -83,13 +98,12 @@ export default class RecordedDetailSelectStreamState implements IRecordedDetailS
                 throw new Error('VideoTypeError');
             }
 
-            if (typeof this.selectedStreamType === 'undefined') {
-                const savedType = this.streamSelectSetting.getSavedValue().type;
-                const newSelectedStreamType = this.streamTypeItems.find(type => {
-                    return type === savedType;
-                });
-                this.selectedStreamType = typeof newSelectedStreamType === 'undefined' ? this.streamTypeItems[0] : newSelectedStreamType;
-            }
+            const savedType = this.streamSelectSetting.getSavedValue().type;
+            const selectedType = typeof this.selectedStreamType === 'undefined' ? savedType : this.selectedStreamType;
+            const newSelectedStreamType = this.streamTypeItems.find(type => {
+                return type === selectedType;
+            });
+            this.selectedStreamType = typeof newSelectedStreamType === 'undefined' ? this.streamTypeItems[0] : newSelectedStreamType;
         }
 
         this.updateModeItems(true);
@@ -151,5 +165,18 @@ export default class RecordedDetailSelectStreamState implements IRecordedDetailS
      */
     public getRecordedId(): apid.RecordedId | null {
         return this.recordedId;
+    }
+
+    public getDirectStreamType(): 'mse' | 'mmts' | null {
+        return this.directStreamType;
+    }
+
+    private createDirectStreamType(videoFile: apid.VideoFile, recorded: apid.RecordedItem): 'mse' | 'mmts' {
+        const channel = this.channelModel.findChannel(recorded.channelId, this.settingModel.getSavedValue().isHalfWidthDisplayed);
+        if (channel !== null && channel.channelType === 'BS4K') {
+            return 'mmts';
+        }
+
+        return videoFile.filename.endsWith('.mmts') || videoFile.relativeFilePath.endsWith('.mmts') ? 'mmts' : 'mse';
     }
 }

@@ -187,7 +187,11 @@ export default class RecordedDetail extends Vue {
     }
 
     public streaming(video: apid.VideoFile): void {
-        this.streamSelectDialogState.open(video, parseInt(this.$route.params.id, 10));
+        if (this.recorded === null) {
+            return;
+        }
+
+        this.streamSelectDialogState.open(video, this.recorded.recordedItem);
     }
 
     public downloadVideo(video: apid.VideoFile): void {

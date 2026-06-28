@@ -38,4 +38,5 @@ export interface LiveMpegTsVideoParam extends BaseVideoParam {
     type: 'LiveMpegTs';
     src: string;
     streamType?: LiveMpegTsStreamType;
+    isLive?: boolean;
 }

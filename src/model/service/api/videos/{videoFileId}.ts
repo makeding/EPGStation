@@ -39,6 +39,7 @@ get.apiDoc = {
             description: 'ビデオファイルを取得しました',
             content: {
                 'video/mp2t': {},
+                'video/mmts': {},
                 'video/mp4': {},
                 'video/x-matroska': {},
                 'video/webm': {},
