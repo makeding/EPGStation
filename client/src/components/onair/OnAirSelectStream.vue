@@ -42,7 +42,7 @@
 import container from '@/model/ModelContainer';
 import ISnackbarState from '@/model/state/snackbar/ISnackbarState';
 import { Component, Prop, Vue, Watch } from 'vue-property-decorator';
-import Mpegts from 'mpegts.js';
+import Mmts from 'mmts.js';
 import IOnAirSelectStreamState from '../../model/state/onair/IOnAirSelectStreamState';
 import Util from '../../util/Util';
 
@@ -119,7 +119,7 @@ export default class OnAirSelectStream extends Vue {
             this.m2tsViewOnURLScheme();
         } else if (this.dialogState.selectedStreamType === 'M2TS-LL') {
             // 再生に対応しているか?
-            if (Mpegts.isSupported() === false || Mpegts.getFeatureList().mseLivePlayback === false) {
+            if (Mmts.isSupported() === false || Mmts.getFeatureList().mseLivePlayback === false) {
                 this.snackbarState.open({
                     color: 'error',
                     text: '再生に対応していません',

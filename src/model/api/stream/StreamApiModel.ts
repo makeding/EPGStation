@@ -13,7 +13,7 @@ import {
 import IStreamManageModel from '../../service/stream/manager/IStreamManageModel';
 import IApiUtil from '../IApiUtil';
 import IPlayList from '../IPlayList';
-import IStreamApiModel, { StreamResponse } from './IStreamApiModel';
+import IStreamApiModel, { LiveM2TsLLStreamOption, StreamResponse } from './IStreamApiModel';
 
 interface StreamConfig {
     cmd?: string;
@@ -95,15 +95,16 @@ export default class StreamApiModel implements IStreamApiModel {
      * @param option: apid.LiveStreamOption
      * @return Promise<StreamResponse>
      */
-    public async startLiveM2TsLLStream(option: apid.LiveStreamOption): Promise<StreamResponse> {
-        const conf = this.getTsLiveConfig('m2tsll', option.mode);
+    public async startLiveM2TsLLStream(option: LiveM2TsLLStreamOption): Promise<StreamResponse> {
+        const conf = option.decode === false ? undefined : this.getTsLiveConfig('m2tsll', option.mode);
 
         // stream 生成
         const stream = await this.liveStreamProvider();
         stream.setOption(
             {
                 channelId: option.channelId,
-                cmd: conf.cmd,
+                cmd: conf?.cmd,
+                decode: option.decode,
             },
             option.mode,
         );

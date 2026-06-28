@@ -29,6 +29,7 @@ export const get: Operation = async (req, res) => {
         result = await streamApiModel.startLiveM2TsLLStream({
             channelId: parseInt(req.params.channelId, 10),
             mode: parseInt(req.query.mode as string, 10),
+            decode: req.query.decode === '0' ? false : true,
         });
         keepTimer = setInterval(() => {
             streamApiModel.keep(result.streamId);
@@ -62,7 +63,7 @@ export const get: Operation = async (req, res) => {
 };
 
 get.apiDoc = {
-    summary: 'ライブ M2TS Low Latency (mpegts.js 用) ストリーム',
+    summary: 'ライブ M2TS Low Latency (mmts.js 用) ストリーム',
     tags: ['streams'],
     description: 'ライブ M2TS Low Latency ストリームを取得する',
     parameters: [

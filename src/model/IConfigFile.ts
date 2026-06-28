@@ -138,6 +138,9 @@ export default interface IConfigFile {
     // 拡張子
     recordedFileExtension: string;
 
+    // BS4K 録画フォーマット
+    recordedBS4KFormat: 'm2ts' | 'mmts';
+
     // 録画ディレクトリ
     recorded: RecordedDirInfo[];
     // 録画一時ディレクトリ

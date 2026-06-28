@@ -31,6 +31,10 @@ isEnabledDropCheck: true
 
 recordedFormat: '%YEAR%年%MONTH%月%DAY%日%HOUR%時%MIN%分%SEC%秒-%HALF_WIDTH_TITLE%_%HALF_WIDTH_CHNAME%'
 recordedFileExtension: .m2ts
+# BS4K recording format:
+#   m2ts: request Mirakurun decode/remux and save .m2ts
+#   mmts: request decode=0 and save raw .mmts
+recordedBS4KFormat: mmts
 recorded:
     - name: recorded
       path: '%ROOT%/recorded'

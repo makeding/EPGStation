@@ -39,14 +39,14 @@ PC からの閲覧でもモダンな UI で操作可能です
     -   番組の視聴
         -   放送中番組のライブ視聴
         -   [aribb24.js][] を使用する Web での字幕/文字スーパー表示機能
-        -   [mpegts.js][] を使用する Web での[低遅延ライブ視聴機能](doc/caption-lowlatency-setup.md)
+        -   [mmts.js][] を使用する Web での[低遅延ライブ視聴機能](doc/caption-lowlatency-setup.md)
         -   録画済み番組のストリーミング視聴
         -   録画済み番組のダウンロード
 -   API
     -   [WebAPI Document](doc/webapi.md)
 
 [aribb24.js]: https://github.com/monyone/aribb24.js
-[mpegts.js]: https://github.com/xqq/mpegts.js
+[mmts.js]: https://github.com/makeding/mmts.js
 
 ## スクリーンショット
 

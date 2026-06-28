@@ -7,9 +7,13 @@ export interface StreamResponse {
     stream: internal.Readable;
 }
 
+export interface LiveM2TsLLStreamOption extends apid.LiveStreamOption {
+    decode?: boolean;
+}
+
 export default interface IStreamApiModel {
     startLiveM2TsStream(option: apid.LiveStreamOption): Promise<StreamResponse>;
-    startLiveM2TsLLStream(option: apid.LiveStreamOption): Promise<StreamResponse>;
+    startLiveM2TsLLStream(option: LiveM2TsLLStreamOption): Promise<StreamResponse>;
     startLiveWebmStream(option: apid.LiveStreamOption): Promise<StreamResponse>;
     startMp4Stream(option: apid.LiveStreamOption): Promise<StreamResponse>;
     startLiveHLSStream(option: apid.LiveStreamOption): Promise<apid.StreamId>;

@@ -139,7 +139,12 @@ class RecordingUtilModel implements IRecordingUtilModel {
             }
         }
 
-        const newFileName = await this.getFileName(parentDir.path, subDir, fileName, this.config.recordedFileExtension);
+        const newFileName = await this.getFileName(
+            parentDir.path,
+            subDir,
+            fileName,
+            this.getRecordedFileExtension(reserve),
+        );
 
         return {
             parendDir: parentDir,
@@ -175,6 +180,12 @@ class RecordingUtilModel implements IRecordingUtilModel {
         } catch (err: any) {
             return newFileName;
         }
+    }
+
+    private getRecordedFileExtension(reserve: Reserve): string {
+        return reserve.channelType === 'BS4K' && this.config.recordedBS4KFormat === 'mmts'
+            ? '.mmts'
+            : this.config.recordedFileExtension;
     }
 
     /**

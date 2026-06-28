@@ -16,9 +16,11 @@ import WatchOnAirInfoCard from '@/components/onair/watch/WatchOnAirInfoCard.vue'
 import TitleBar from '@/components/titleBar/TitleBar.vue';
 import VideoContainer from '@/components/video/VideoContainer.vue';
 import { BaseVideoParam, LiveHLSParam, LiveMpegTsVideoParam, NormalVideoParam } from '@/components/video/ViedoParam';
+import IChannelModel from '@/model/channels/IChannelModel';
 import container from '@/model/ModelContainer';
 import IScrollPositionState from '@/model/state/IScrollPositionState';
 import ISnackbarState from '@/model/state/snackbar/ISnackbarState';
+import { ISettingStorageModel } from '@/model/storage/setting/ISettingStorageModel';
 import Util from '@/util/Util';
 import { Component, Vue, Watch } from 'vue-property-decorator';
 import * as apid from '../../../api';
@@ -43,6 +45,8 @@ export default class WatchOnAir extends Vue {
 
     private scrollState: IScrollPositionState = container.get<IScrollPositionState>('IScrollPositionState');
     private snackbarState: ISnackbarState = container.get<ISnackbarState>('ISnackbarState');
+    private channelModel: IChannelModel = container.get<IChannelModel>('IChannelModel');
+    private settingModel: ISettingStorageModel = container.get<ISettingStorageModel>('ISettingStorageModel');
 
     private watchParam: WatchParam | null = null;
 
@@ -67,9 +71,13 @@ export default class WatchOnAir extends Vue {
                         mode: this.watchParam.mode,
                     };
                 } else if (this.watchParam.type === 'm2tsll') {
+                    const channel = this.channelModel.findChannel(this.watchParam.channel, this.settingModel.getSavedValue().isHalfWidthDisplayed);
+                    const streamType = channel !== null && channel.channelType === 'BS4K' ? 'mmts' : 'mse';
+                    const decodeParam = streamType === 'mmts' ? '&decode=0' : '';
                     (this.videoParam as LiveMpegTsVideoParam) = {
                         type: 'LiveMpegTs',
-                        src: `${window.location.origin}${Util.getSubDirectory()}/api/streams/live/${this.watchParam.channel}/m2tsll?mode=${this.watchParam.mode}`,
+                        src: `${window.location.origin}${Util.getSubDirectory()}/api/streams/live/${this.watchParam.channel}/m2tsll?mode=${this.watchParam.mode}${decodeParam}`,
+                        streamType: streamType,
                     };
                 } else {
                     (this.videoParam as NormalVideoParam) = {

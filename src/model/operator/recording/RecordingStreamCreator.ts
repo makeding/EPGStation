@@ -239,13 +239,14 @@ export default class RecordingStreamCreator implements IRecordingStreamCreator {
     private getStream(reserve: Reserve, abortSignal?: AbortSignal): Promise<http.IncomingMessage> {
         const mirakurun = this.mirakurunClientModel.getClient();
         mirakurun.priority = reserve.isConflict ? this.config.conflictPriority : this.config.recPriority;
+        const decode = this.shouldDecode(reserve);
 
         if (reserve.programId === null) {
             // 時刻指定予約
             return this.getTimeSpecifiedStream(reserve, mirakurun, abortSignal);
         } else {
             // programId 指定予約
-            return mirakurun.getProgramStream({ id: reserve.programId, decode: true, signal: abortSignal });
+            return mirakurun.getProgramStream({ id: reserve.programId, decode: decode, signal: abortSignal });
         }
     }
 
@@ -276,7 +277,7 @@ export default class RecordingStreamCreator implements IRecordingStreamCreator {
 
         // mirakurun から channel stream を受け取る
         const channelStream = await mirakurun
-            .getServiceStream({ id: reserve.channelId, decode: true, signal: abortSignal })
+            .getServiceStream({ id: reserve.channelId, decode: this.shouldDecode(reserve), signal: abortSignal })
             .catch(err => {
                 this.log.system.error(`stream get error ${reserve.channelId}`);
                 this.log.system.error(err);
@@ -299,6 +300,10 @@ export default class RecordingStreamCreator implements IRecordingStreamCreator {
         }
 
         return channelStream;
+    }
+
+    private shouldDecode(reserve: Reserve): boolean {
+        return reserve.channelType !== 'BS4K' || this.config.recordedBS4KFormat !== 'mmts';
     }
 
     /**

@@ -38,7 +38,7 @@ export default class ServerConfigModel implements IServerConfigModel {
                 delete this.config.streamConfig.live.ts.mp4;
 
                 if (UaUtil.isiOS() === true && UaUtil.isiPadOS() === false) {
-                    // ios では mpegts.js 用設定を削除する
+                    // ios では mmts.js 用設定を削除する
                     delete this.config.streamConfig.live.ts.m2tsll;
                 }
 

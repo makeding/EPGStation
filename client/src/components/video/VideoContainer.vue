@@ -177,6 +177,7 @@
                     v-if="videoParam.type == 'LiveMpegTs'"
                     ref="video"
                     v-bind:videoSrc.sync="videoParam.src"
+                    v-bind:streamType="videoParam.streamType"
                     v-on:timeupdate="onTimeupdate"
                     v-on:waiting="onWaiting"
                     v-on:loadeddata="onLoadeddata"

@@ -102,6 +102,11 @@ class Configuration implements IConfiguration {
     private formatConfig(newConfig: IConfigFile): IConfigFile {
         this.setTemplateValues(newConfig);
 
+        if (newConfig.recordedBS4KFormat !== 'm2ts' && newConfig.recordedBS4KFormat !== 'mmts') {
+            this.log.system.warn(`recordedBS4KFormat is invalid: ${newConfig.recordedBS4KFormat}, fallback to m2ts`);
+            newConfig.recordedBS4KFormat = 'm2ts';
+        }
+
         // http or https の設定が存在するかチェック
         if (
             typeof newConfig.port === 'undefined' &&
@@ -244,6 +249,7 @@ namespace Configuration {
         timeSpecifiedEndMargin: 1,
         recordedFormat: '%YEAR%年%MONTH%月%DAY%日%HOUR%時%MIN%分%SEC%秒-%TITLE%',
         recordedFileExtension: '.ts',
+        recordedBS4KFormat: 'm2ts',
         recorded: [
             {
                 name: 'recorded',
