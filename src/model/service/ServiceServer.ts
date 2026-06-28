@@ -24,6 +24,12 @@ import ISocketIOManageModel from './socketio/ISocketIOManageModel';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const swaggerdist = require('swagger-ui-dist');
 
+type ExpressStaticMime = {
+    mime: {
+        define(types: Record<string, string[]>): void;
+    };
+};
+
 @injectable()
 class ServiceServer implements IServiceServer {
     private log: ILogger;
@@ -128,21 +134,23 @@ class ServiceServer implements IServiceServer {
      */
     private setMime(): void {
         // static mime
-        express.static.mime.define({ 'text/css': ['css', 'min.css'] });
-        express.static.mime.define({ 'text/javascript': ['js', 'min.js'] });
-        express.static.mime.define({
+        const staticMime = (express.static as unknown as ExpressStaticMime).mime;
+
+        staticMime.define({ 'text/css': ['css', 'min.css'] });
+        staticMime.define({ 'text/javascript': ['js', 'min.js'] });
+        staticMime.define({
             'application/vnd.ms-fontobject': ['eot'],
         });
-        express.static.mime.define({ 'application/font-ttf': ['ttf'] });
-        express.static.mime.define({ 'application/font-woff': ['woff'] });
-        express.static.mime.define({ 'application/font-woff2': ['woff2'] });
-        express.static.mime.define({ 'magnus-internal/imagemap': ['map'] });
-        express.static.mime.define({ 'image/png': ['png'] });
-        express.static.mime.define({ 'image/jpg': ['jpg'] });
-        express.static.mime.define({ 'video/mpeg': ['ts'] });
-        express.static.mime.define({ 'application/octet-stream': ['m4s'] });
-        express.static.mime.define({ 'video/MP2T': ['m3u8'] });
-        express.static.mime.define({ 'text/plain': ['log'] });
+        staticMime.define({ 'application/font-ttf': ['ttf'] });
+        staticMime.define({ 'application/font-woff': ['woff'] });
+        staticMime.define({ 'application/font-woff2': ['woff2'] });
+        staticMime.define({ 'magnus-internal/imagemap': ['map'] });
+        staticMime.define({ 'image/png': ['png'] });
+        staticMime.define({ 'image/jpg': ['jpg'] });
+        staticMime.define({ 'video/mpeg': ['ts'] });
+        staticMime.define({ 'application/octet-stream': ['m4s'] });
+        staticMime.define({ 'video/MP2T': ['m3u8'] });
+        staticMime.define({ 'text/plain': ['log'] });
     }
 
     /**
