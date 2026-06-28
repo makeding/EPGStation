@@ -634,39 +634,7 @@ class RecorderModel implements IRecorderModel {
         recorded.endAt = this.reserve.endAt;
         recorded.duration = this.reserve.endAt - this.reserve.startAt;
 
-        if (this.reserve.isTimeSpecified === true) {
-            // 時刻指定予約なので channelId と startAt を元に番組情報を取得する
-            const program = await this.programDB.findChannelIdAndTime(this.reserve.channelId, this.reserve.startAt);
-            if (program === null) {
-                // 番組情報が取れなかった場合
-                this.log.system.warn(
-                    `get program info warn channelId: ${this.reserve.channelId}, startAt: ${this.reserve.startAt}`,
-                );
-                recorded.name = '';
-                recorded.halfWidthName = '';
-            } else {
-                recorded.name = program.name;
-                recorded.halfWidthName = program.halfWidthName;
-                recorded.description = program.description;
-                recorded.halfWidthDescription = program.halfWidthDescription;
-                recorded.extended = program.extended;
-                recorded.halfWidthExtended = program.halfWidthExtended;
-                recorded.rawExtended = program.rawExtended;
-                recorded.rawHalfWidthExtended = program.rawHalfWidthExtended;
-                recorded.genre1 = program.genre1;
-                recorded.subGenre1 = program.subGenre1;
-                recorded.genre2 = program.genre2;
-                recorded.subGenre2 = program.subGenre2;
-                recorded.genre3 = program.genre3;
-                recorded.subGenre3 = program.subGenre3;
-                recorded.videoType = program.videoType;
-                recorded.videoResolution = program.videoResolution;
-                recorded.videoStreamContent = program.videoStreamContent;
-                recorded.videoComponentType = program.videoComponentType;
-                recorded.audioSamplingRate = program.audioSamplingRate;
-                recorded.audioComponentType = program.audioComponentType;
-            }
-        } else if (this.reserve.name !== null && this.reserve.halfWidthName !== null) {
+        if (this.reserve.name !== null && this.reserve.halfWidthName !== null) {
             recorded.name = this.reserve.name;
             recorded.halfWidthName = this.reserve.halfWidthName;
             recorded.description = this.reserve.description;
@@ -688,7 +656,7 @@ class RecorderModel implements IRecorderModel {
             recorded.audioSamplingRate = this.reserve.audioSamplingRate;
             recorded.audioComponentType = this.reserve.audioComponentType;
         } else {
-            // 時刻指定予約ではないのに、name が null
+            // name が null
             throw new Error('CreateRecordedError');
         }
 
