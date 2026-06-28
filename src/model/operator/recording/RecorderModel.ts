@@ -1023,6 +1023,12 @@ class RecorderModel implements IRecorderModel {
                     // 録画中に終了時間が変更されたらイベントリレーの確認タイマーも再設定する
                     if (this.reserve.endAt !== newReserve.endAt && this.isRecording === true) {
                         this.setEventRelayTimer(newReserve);
+                        try {
+                            this.streamCreator.changeEndAt(newReserve);
+                        } catch (err: any) {
+                            this.log.system.error(`change recording endAt: ${newReserve.id}`);
+                            this.log.system.error(err);
+                        }
                     }
 
                     if (this.reserve.startAt < newReserve.startAt) {

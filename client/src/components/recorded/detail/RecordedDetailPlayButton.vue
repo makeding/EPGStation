@@ -12,6 +12,7 @@
                     <v-btn v-for="video in videoFiles" v-bind:key="video.id" color="success" dark class="ma-1" v-on:click="play(video)">
                         {{ video.name }}
                     </v-btn>
+                    <v-btn v-for="video in directVideoFiles" v-bind:key="`direct-${video.id}`" color="success" dark class="ma-1" v-on:click="direct(video)">Direct</v-btn>
                 </div>
             </v-card>
         </v-menu>
@@ -34,10 +35,17 @@ export default class RecordedDetailPlayButton extends Vue {
     @Prop({ required: true })
     public videoFiles!: apid.VideoFile[];
 
+    @Prop({ required: false, default: () => [] })
+    public directVideoFiles!: apid.VideoFile[];
+
     public isOpened: boolean = false;
 
     public play(video: apid.VideoFile): void {
         this.$emit('play', video);
+    }
+
+    public direct(video: apid.VideoFile): void {
+        this.$emit('direct', video);
     }
 
     public onClickMenuBackground(e: Event): boolean {

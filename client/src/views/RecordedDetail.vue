@@ -56,6 +56,8 @@
                                         button="mdi-play-circle"
                                         :videoFiles="recorded.display.canStremingVideoFiles"
                                         v-on:play="streaming"
+                                        :directVideoFiles="getDirectVideoFiles(recorded.display.canStremingVideoFiles)"
+                                        v-on:direct="direct"
                                     ></RecordedDetailPlayButton>
                                 </div>
                                 <div class="d-flex flex-wrap">
@@ -192,6 +194,27 @@ export default class RecordedDetail extends Vue {
         }
 
         this.streamSelectDialogState.open(video, this.recorded.recordedItem);
+    }
+
+    public direct(video: apid.VideoFile): void {
+        if (this.recorded === null) {
+            return;
+        }
+
+        const streamType = video.filename.endsWith('.mmts') || video.relativeFilePath.endsWith('.mmts') ? 'mmts' : 'mse';
+        Util.move(this.$router, {
+            path: `/recorded/streaming/${video.id}`,
+            query: {
+                recordedId: this.recorded.recordedItem.id.toString(10),
+                streamingType: 'direct',
+                mode: '0',
+                streamType: streamType,
+            },
+        });
+    }
+
+    public getDirectVideoFiles(videoFiles: apid.VideoFile[] | undefined): apid.VideoFile[] {
+        return typeof videoFiles === 'undefined' ? [] : videoFiles.filter(video => video.type === 'ts');
     }
 
     public downloadVideo(video: apid.VideoFile): void {

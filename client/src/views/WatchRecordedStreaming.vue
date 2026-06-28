@@ -54,7 +54,7 @@ export default class WatchRecordedStreaming extends Vue {
                         videoFileId: videoFileId,
                         mode: mode,
                     };
-                } else if (streamingType === 'tlv') {
+                } else if (streamingType === 'direct' || streamingType === 'tlv') {
                     this.videoParam = {
                         type: 'LiveMpegTs',
                         src: `${window.location.origin}${Util.getSubDirectory()}/api/videos/${videoFileId}`,

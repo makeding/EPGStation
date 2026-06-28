@@ -85,18 +85,12 @@ export default class RecordedDetailSelectStreamDialog extends Vue {
             return;
         }
 
-        const directStreamType = this.dialogState.getDirectStreamType();
         await Util.move(this.$router, {
             path: `/recorded/streaming/${this.dialogState.getVideoFileId()}`,
             query: {
                 recordedId: recordedId.toString(),
                 streamingType: this.dialogState.selectedStreamType.toLowerCase(),
                 mode: this.dialogState.selectedStreamMode.toString(10),
-                ...(this.dialogState.selectedStreamType === 'TLV' && directStreamType !== null
-                    ? {
-                          streamType: directStreamType,
-                      }
-                    : {}),
             },
         });
     }

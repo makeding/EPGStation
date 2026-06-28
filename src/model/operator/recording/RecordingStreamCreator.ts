@@ -138,6 +138,7 @@ export default class RecordingStreamCreator implements IRecordingStreamCreator {
             // stream 登録
             const s = await stream;
             tunerProgram.stream = s;
+            this.setEndTimer(reserve);
 
             // stream 停止時に programs から削除する
             finished(tunerProgram.stream, {}, err => {
@@ -268,12 +269,7 @@ export default class RecordingStreamCreator implements IRecordingStreamCreator {
         }
 
         // 予約終了時刻を過ぎたら stream を停止する
-        this.timerIndex[reserve.id] = setTimeout(
-            () => {
-                this.destroyStream(reserve);
-            },
-            reserve.endAt - now + 1000 * this.config.timeSpecifiedEndMargin,
-        );
+        this.setEndTimer(reserve);
 
         // mirakurun から channel stream を受け取る
         const channelStream = await mirakurun
@@ -334,16 +330,21 @@ export default class RecordingStreamCreator implements IRecordingStreamCreator {
      * @param reserve
      */
     public changeEndAt(reserve: Reserve): void {
-        if (reserve.programId !== null || typeof this.timerIndex[reserve.id] === 'undefined') {
+        if (typeof this.timerIndex[reserve.id] === 'undefined') {
             throw new Error('StreamChangeAtError');
         }
 
         // timer 再設定
+        this.setEndTimer(reserve);
+    }
+
+    private setEndTimer(reserve: Reserve): void {
+        clearTimeout(this.timerIndex[reserve.id]);
         this.timerIndex[reserve.id] = setTimeout(
             () => {
                 this.destroyStream(reserve);
             },
-            reserve.endAt - new Date().getTime() + 1000 * this.config.timeSpecifiedEndMargin,
+            Math.max(0, reserve.endAt - new Date().getTime() + 1000 * this.config.timeSpecifiedEndMargin),
         );
     }
 }

@@ -195,7 +195,7 @@ export default class LiveMpegTsVideo extends BaseVideo {
      * @return number
      */
     public getDuration(): number {
-        return 0;
+        return this.isLive === true ? 0 : super.getDuration();
     }
 
     /**
@@ -203,7 +203,7 @@ export default class LiveMpegTsVideo extends BaseVideo {
      * @return number
      */
     public getCurrentTime(): number {
-        return 0;
+        return this.isLive === true ? 0 : super.getCurrentTime();
     }
 
     /**
@@ -211,7 +211,9 @@ export default class LiveMpegTsVideo extends BaseVideo {
      * @param time: number (秒)
      */
     public setCurrentTime(time: number): void {
-        return;
+        if (this.isLive === false) {
+            super.setCurrentTime(time);
+        }
     }
 
     /**
