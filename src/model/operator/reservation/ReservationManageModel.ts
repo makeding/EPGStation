@@ -981,7 +981,8 @@ class ReservationManageModel implements IReservationManageModel {
         const isMatched = keywords.every(str => name.includes(str));
         if (isMatched === false) {
             this.log.system.warn(
-                `skip time specification reserve because program name is not matched ruleId: ${rule.id}, channelId: ${channelId}, startAt: ${startAt}, keyword: ${keyword}, program: ${program.name}`,
+                `skip time specification reserve because program name is not matched ruleId: ${rule.id}, ` +
+                    `channelId: ${channelId}, startAt: ${startAt}, keyword: ${keyword}, program: ${program.name}`,
             );
         }
 
