@@ -1046,9 +1046,13 @@ components:
             type: object
             required:
                 - allowEndLack
+                - removeDataBroadcast
             properties:
                 allowEndLack:
                     description: 末尾切れを許すか
+                    type: boolean
+                removeDataBroadcast:
+                    description: データ放送を削除するか
                     type: boolean
                 tags:
                     type: array
