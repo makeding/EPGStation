@@ -7,6 +7,14 @@ import DBUtil from './DBUtil';
 import IDBOperator from './IDBOperator';
 import IRuleDB, { RuleWithCnt } from './IRuleDB';
 
+const normalizeSaveOptionText = (value: string | undefined): string | null => {
+    if (typeof value === 'undefined' || value.trim().length === 0) {
+        return null;
+    }
+
+    return value;
+};
+
 @injectable()
 export default class RuleDB implements IRuleDB {
     private op: IDBOperator;
@@ -313,12 +321,9 @@ export default class RuleDB implements IRuleDB {
         }
 
         if (typeof rule.saveOption !== 'undefined') {
-            convertedRule.parentDirectoryName =
-                typeof rule.saveOption.parentDirectoryName === 'undefined' ? null : rule.saveOption.parentDirectoryName;
-            convertedRule.directory =
-                typeof rule.saveOption.directory === 'undefined' ? null : rule.saveOption.directory;
-            convertedRule.recordedFormat =
-                typeof rule.saveOption.recordedFormat === 'undefined' ? null : rule.saveOption.recordedFormat;
+            convertedRule.parentDirectoryName = normalizeSaveOptionText(rule.saveOption.parentDirectoryName);
+            convertedRule.directory = normalizeSaveOptionText(rule.saveOption.directory);
+            convertedRule.recordedFormat = normalizeSaveOptionText(rule.saveOption.recordedFormat);
         }
 
         if (typeof rule.encodeOption !== 'undefined') {

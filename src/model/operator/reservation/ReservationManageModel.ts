@@ -32,6 +32,14 @@ interface TimeSpecificationRuleCheckTarget {
     searchOption: apid.RuleSearchOption;
 }
 
+const normalizeSaveOptionText = (value: string | undefined): string | null => {
+    if (typeof value === 'undefined' || value.trim().length === 0) {
+        return null;
+    }
+
+    return value;
+};
+
 @injectable()
 class ReservationManageModel implements IReservationManageModel {
     private log: ILogger;
@@ -515,12 +523,9 @@ class ReservationManageModel implements IReservationManageModel {
             return;
         }
 
-        reserve.parentDirectoryName =
-            typeof saveOption.parentDirectoryName === 'undefined' ? null : saveOption.parentDirectoryName;
-
-        reserve.directory = typeof saveOption.directory === 'undefined' ? null : saveOption.directory;
-
-        reserve.recordedFormat = typeof saveOption.recordedFormat === 'undefined' ? null : saveOption.recordedFormat;
+        reserve.parentDirectoryName = normalizeSaveOptionText(saveOption.parentDirectoryName);
+        reserve.directory = normalizeSaveOptionText(saveOption.directory);
+        reserve.recordedFormat = normalizeSaveOptionText(saveOption.recordedFormat);
     }
 
     /**
