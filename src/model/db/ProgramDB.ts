@@ -635,6 +635,9 @@ export default class ProgramDB implements IProgramDB {
             if (!!searchOption.GR === true) {
                 channelTypes.push('GR');
             }
+            if (!!searchOption['GR-ALT'] === true) {
+                channelTypes.push('GR-ALT');
+            }
             if (!!searchOption.BS === true) {
                 channelTypes.push('BS');
             }

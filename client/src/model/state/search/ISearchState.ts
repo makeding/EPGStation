@@ -18,6 +18,7 @@ export interface BroadcastWaveState {
 
 export interface BroadcastWave {
     GR: BroadcastWaveState;
+    'GR-ALT': BroadcastWaveState;
     BS: BroadcastWaveState;
     CS: BroadcastWaveState;
     SKY: BroadcastWaveState;

@@ -321,6 +321,7 @@ export interface RuleSearchOption {
     ignoreDescription?: boolean; // 概要 (除外検索キーワード)
     ignoreExtended?: boolean; // 詳細 (除外検索キーワード)
     GR?: boolean; // GR
+    "GR-ALT"?: boolean; // GR-ALT
     BS?: boolean; // BS
     CS?: boolean; // CS
     SKY?: boolean; // SKY

@@ -183,6 +183,10 @@ export default class SearchState implements ISearchState {
                     isEnable: true,
                     isShow: true,
                 },
+                'GR-ALT': {
+                    isEnable: true,
+                    isShow: true,
+                },
                 BS: {
                     isEnable: true,
                     isShow: true,
@@ -382,6 +386,10 @@ export default class SearchState implements ISearchState {
             if (config.broadcast.GR === false) {
                 this.searchOption.broadcastWave.GR.isEnable = false;
                 this.searchOption.broadcastWave.GR.isShow = false;
+            }
+            if (config.broadcast['GR-ALT'] === false) {
+                this.searchOption.broadcastWave['GR-ALT'].isEnable = false;
+                this.searchOption.broadcastWave['GR-ALT'].isShow = false;
             }
             if (config.broadcast.BS === false) {
                 this.searchOption.broadcastWave.BS.isEnable = false;
@@ -749,6 +757,7 @@ export default class SearchState implements ISearchState {
             this.searchOption.channels = searchOption.channelIds.slice(0, searchOption.channelIds.length);
         } else {
             this.searchOption.broadcastWave.GR.isEnable = !!searchOption.GR;
+            this.searchOption.broadcastWave['GR-ALT'].isEnable = !!searchOption['GR-ALT'];
             this.searchOption.broadcastWave.BS.isEnable = !!searchOption.BS;
             this.searchOption.broadcastWave.CS.isEnable = !!searchOption.CS;
             this.searchOption.broadcastWave.SKY.isEnable = !!searchOption.SKY;
@@ -1137,6 +1146,7 @@ export default class SearchState implements ISearchState {
         // channels
         if (this.searchOption.channels.length > 0) {
             this.searchOption.broadcastWave.GR.isEnable = false;
+            this.searchOption.broadcastWave['GR-ALT'].isEnable = false;
             this.searchOption.broadcastWave.BS.isEnable = false;
             this.searchOption.broadcastWave.CS.isEnable = false;
             this.searchOption.broadcastWave.SKY.isEnable = false;
@@ -1182,6 +1192,7 @@ export default class SearchState implements ISearchState {
             this.searchOption.broadcastWave.NW40.isEnable = false;
         } else if (this.isDisabledAllBroadcasWave(this.searchOption.broadcastWave)) {
             this.searchOption.broadcastWave.GR.isEnable = true;
+            this.searchOption.broadcastWave['GR-ALT'].isEnable = true;
             this.searchOption.broadcastWave.BS.isEnable = true;
             this.searchOption.broadcastWave.CS.isEnable = true;
             this.searchOption.broadcastWave.SKY.isEnable = true;
@@ -1270,6 +1281,10 @@ export default class SearchState implements ISearchState {
 
     private isDisabledAllBroadcasWave(broadcas: BroadcastWave): boolean {
         if (broadcas.GR.isShow === true && broadcas.GR.isEnable === true) {
+            return false;
+        }
+
+        if (broadcas['GR-ALT'].isShow === true && broadcas['GR-ALT'].isEnable === true) {
             return false;
         }
 
@@ -1586,6 +1601,9 @@ export default class SearchState implements ISearchState {
             if (option.broadcastWave.GR.isShow === true) {
                 ruleOption.GR = option.broadcastWave.GR.isEnable;
             }
+            if (option.broadcastWave['GR-ALT'].isShow === true) {
+                ruleOption['GR-ALT'] = option.broadcastWave['GR-ALT'].isEnable;
+            }
             if (option.broadcastWave.BS.isShow === true) {
                 ruleOption.BS = option.broadcastWave.BS.isEnable;
             }
@@ -1784,6 +1802,10 @@ export default class SearchState implements ISearchState {
      */
     private isEnabledAllBroadcasWave(broadcas: BroadcastWave): boolean {
         if (broadcas.GR.isShow === true && broadcas.GR.isEnable !== true) {
+            return false;
+        }
+
+        if (broadcas['GR-ALT'].isShow === true && broadcas['GR-ALT'].isEnable !== true) {
             return false;
         }
 

@@ -40,6 +40,12 @@
                             label="GR"
                         ></v-checkbox>
                         <v-checkbox
+                            v-if="searchState.searchOption.broadcastWave['GR-ALT'].isShow"
+                            v-model="searchState.searchOption.broadcastWave['GR-ALT'].isEnable"
+                            class="mx-1 my-0"
+                            label="GR-ALT"
+                        ></v-checkbox>
+                        <v-checkbox
                             v-if="searchState.searchOption.broadcastWave.BS.isShow"
                             v-model="searchState.searchOption.broadcastWave.BS.isEnable"
                             class="mx-1 my-0"

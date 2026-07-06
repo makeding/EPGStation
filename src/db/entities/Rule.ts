@@ -107,6 +107,12 @@ export default class Rule extends BaseEntity {
     public GR: boolean = false; // GR
 
     @Column({
+        name: 'GR-ALT',
+        default: false,
+    })
+    public GRALT: boolean = false; // GR-ALT
+
+    @Column({
         default: false,
     })
     public BS: boolean = false; // BS
