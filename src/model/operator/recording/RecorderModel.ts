@@ -67,6 +67,8 @@ class RecorderModel implements IRecorderModel {
     private isRecording: boolean = false;
     private isPlanToDelete: boolean = false;
     private isCanceledCallingFinished: boolean = false; // mirakurun の stream の終了検知をキャンセルするか
+    private isRecEndStarted: boolean = false;
+    private isRecordingFailed: boolean = false;
     private eventEmitter = new events.EventEmitter();
 
     private dropLogFileId: apid.DropLogFileId | null = null;
@@ -551,7 +553,7 @@ class RecorderModel implements IRecorderModel {
 
         stream.finished(s, {}, async err => {
             // 終了処理が呼ばれていたら無視する
-            if (this.isCanceledCallingFinished === true) {
+            if (this.isCanceledCallingFinished === true || this.isRecEndStarted === true) {
                 return;
             }
 
@@ -560,12 +562,17 @@ class RecorderModel implements IRecorderModel {
                     `stream.finished error: reserveId: ${this.reserve.id} recordedId: ${this.recordedId}`,
                 );
                 await this.recFailed(err);
+            } else if (Date.now() + IRecordingStreamCreator.PREP_TIME < this.reserve.endAt) {
+                this.log.system.error(
+                    `recording stream ended early: reserveId: ${this.reserve.id} recordedId: ${this.recordedId}`,
+                );
+                await this.recFailed(new Error('RecordingStreamEndedEarly'));
             }
         });
 
         stream.finished(writeFinishedTarget, {}, async err => {
             // 終了処理が呼ばれていたら無視する
-            if (this.isCanceledCallingFinished === true) {
+            if (this.isCanceledCallingFinished === true || this.isRecEndStarted === true) {
                 return;
             }
 
@@ -592,6 +599,11 @@ class RecorderModel implements IRecorderModel {
      * @param err: Error
      */
     private async recFailed(err: Error): Promise<void> {
+        if (this.isRecordingFailed === true || this.isRecEndStarted === true) {
+            return;
+        }
+        this.isRecordingFailed = true;
+
         this.destroyStream();
         this.log.system.error(`recording end error reserveId: ${this.reserve.id} recordedId: ${this.recordedId}`);
         this.log.system.error(err);
@@ -671,6 +683,11 @@ class RecorderModel implements IRecorderModel {
      * 録画終了処理
      */
     private async recEnd(): Promise<void> {
+        if (this.isRecEndStarted === true) {
+            return;
+        }
+        this.isRecEndStarted = true;
+
         this.log.system.info(`start recEnd reserveId: ${this.reserve.id} recordedId: ${this.recordedId}`);
 
         // stream 停止
@@ -781,11 +798,15 @@ class RecorderModel implements IRecorderModel {
         const beforeStat = await fs.promises.stat(filePath);
         const sampleMode = this.reserve.programId === null ? 'start' : 'threePoint';
         const duration = this.reserve.programId === null ? 0 : this.reserve.endAt - this.reserve.startAt;
-        const dataBroadcastPids = await DataBroadcastFilterTransform.collectDataBroadcastPidsFromFile(filePath, duration, {
-            logger: this.log,
-            reserveId: this.reserve.id,
-            sampleMode,
-        });
+        const dataBroadcastPids = await DataBroadcastFilterTransform.collectDataBroadcastPidsFromFile(
+            filePath,
+            duration,
+            {
+                logger: this.log,
+                reserveId: this.reserve.id,
+                sampleMode,
+            },
+        );
 
         if (dataBroadcastPids.size === 0) {
             this.log.system.info(`data broadcast pids not found reserveId: ${this.reserve.id}`);
