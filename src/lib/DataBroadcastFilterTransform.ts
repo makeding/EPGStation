@@ -8,12 +8,14 @@ interface DataBroadcastFilterTransformOptions {
     dataBroadcastPids?: Iterable<number>;
     pmtPids?: Iterable<number>;
     preserveDataBroadcastRanges?: ByteRange[];
+    removeSuperimpose?: boolean;
 }
 
 interface CollectDataBroadcastPidsOptions {
     logger?: ILogger;
     reserveId?: number;
     sampleMode?: 'start' | 'threePoint';
+    removeSuperimpose?: boolean;
 }
 
 interface DataBroadcastScanResult {
@@ -54,9 +56,10 @@ export default class DataBroadcastFilterTransform extends stream.Transform {
     private readonly pmtOutputContinuityCounters: Map<number, number> = new Map();
     private readonly pmtOutputStates: Map<number, PmtOutputState> = new Map();
     private readonly preserveDataBroadcastRanges: ByteRange[];
+    private readonly removeSuperimpose: boolean;
     private readonly logger?: ILogger;
     private readonly reserveId?: number;
-    private processedPacketBytes: number = 0;
+    private processedInputBytes: number = 0;
     private hasWarnedSync: boolean = false;
     private static crcTable: number[] | null = null;
 
@@ -65,6 +68,7 @@ export default class DataBroadcastFilterTransform extends stream.Transform {
         this.logger = options.logger;
         this.reserveId = options.reserveId;
         this.preserveDataBroadcastRanges = options.preserveDataBroadcastRanges ?? [];
+        this.removeSuperimpose = options.removeSuperimpose ?? false;
         if (typeof options.dataBroadcastPids !== 'undefined') {
             for (const pid of options.dataBroadcastPids) {
                 this.dataBroadcastPids.add(pid);
@@ -137,15 +141,55 @@ export default class DataBroadcastFilterTransform extends stream.Transform {
         };
     }
 
+    public static async countPacketBytesFromFile(filePath: string, pids: Iterable<number>): Promise<number> {
+        const targetPids = new Set(pids);
+        if (targetPids.size === 0) {
+            return 0;
+        }
+
+        let buffer = Buffer.alloc(0);
+        let packetCount = 0;
+        for await (const chunk of fs.createReadStream(filePath)) {
+            const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            buffer = Buffer.concat([buffer, data]);
+
+            while (buffer.length >= DataBroadcastFilterTransform.TS_PACKET_SIZE) {
+                if (buffer[0] !== DataBroadcastFilterTransform.SYNC_BYTE) {
+                    const syncOffset = DataBroadcastFilterTransform.findSyncOffset(buffer);
+                    if (syncOffset === -1) {
+                        const keepBytes = Math.min(
+                            buffer.length,
+                            DataBroadcastFilterTransform.TS_PACKET_SIZE * DataBroadcastFilterTransform.SYNC_CHECK_COUNT,
+                        );
+                        buffer = buffer.subarray(buffer.length - keepBytes);
+                        break;
+                    }
+                    buffer = buffer.subarray(syncOffset);
+                    if (buffer.length < DataBroadcastFilterTransform.TS_PACKET_SIZE) {
+                        break;
+                    }
+                }
+
+                if (targetPids.has(DataBroadcastFilterTransform.getPid(buffer))) {
+                    packetCount++;
+                }
+                buffer = buffer.subarray(DataBroadcastFilterTransform.TS_PACKET_SIZE);
+            }
+        }
+
+        return packetCount * DataBroadcastFilterTransform.TS_PACKET_SIZE;
+    }
+
     public _transform(chunk: Buffer, _encoding: string, callback: stream.TransformCallback): void {
         this.buffer = Buffer.concat([this.buffer, chunk]);
         const outputs: Buffer[] = [];
 
         while (this.buffer.length >= DataBroadcastFilterTransform.TS_PACKET_SIZE) {
             if (this.buffer[0] !== DataBroadcastFilterTransform.SYNC_BYTE) {
-                const syncOffset = this.findSyncOffset(this.buffer);
+                const syncOffset = DataBroadcastFilterTransform.findSyncOffset(this.buffer);
                 if (syncOffset === -1) {
                     outputs.push(this.buffer);
+                    this.processedInputBytes += this.buffer.length;
                     this.buffer = Buffer.alloc(0);
                     this.warnSyncLoss();
                     break;
@@ -154,6 +198,7 @@ export default class DataBroadcastFilterTransform extends stream.Transform {
                 if (syncOffset > 0) {
                     outputs.push(this.buffer.subarray(0, syncOffset));
                     this.buffer = this.buffer.subarray(syncOffset);
+                    this.processedInputBytes += syncOffset;
                     this.warnSyncLoss();
                 }
 
@@ -164,8 +209,8 @@ export default class DataBroadcastFilterTransform extends stream.Transform {
 
             const packet = this.buffer.subarray(0, DataBroadcastFilterTransform.TS_PACKET_SIZE);
             this.buffer = this.buffer.subarray(DataBroadcastFilterTransform.TS_PACKET_SIZE);
-            const packetOffset = this.processedPacketBytes;
-            this.processedPacketBytes += DataBroadcastFilterTransform.TS_PACKET_SIZE;
+            const packetOffset = this.processedInputBytes;
+            this.processedInputBytes += DataBroadcastFilterTransform.TS_PACKET_SIZE;
 
             outputs.push(...this.processPacket(packet, packetOffset));
         }
@@ -351,7 +396,11 @@ export default class DataBroadcastFilterTransform extends stream.Transform {
 
             const isDataBroadcast =
                 this.dataBroadcastPids.has(elementaryPid) ||
-                DataBroadcastFilterTransform.isRemovableDataStream(streamType);
+                DataBroadcastFilterTransform.isRemovableDataStream(
+                    streamType,
+                    section.subarray(pos + 5, entryEnd),
+                    this.removeSuperimpose,
+                );
             if (isDataBroadcast) {
                 this.dataBroadcastPids.add(elementaryPid);
                 if (removeDataBroadcast === true) {
@@ -499,7 +548,7 @@ export default class DataBroadcastFilterTransform extends stream.Transform {
         return payloadOffset <= DataBroadcastFilterTransform.TS_PACKET_SIZE ? payloadOffset : null;
     }
 
-    private findSyncOffset(buffer: Buffer): number {
+    private static findSyncOffset(buffer: Buffer): number {
         for (let offset = 1; offset < buffer.length; offset++) {
             let matchCount = 0;
             for (
@@ -542,8 +591,39 @@ export default class DataBroadcastFilterTransform extends stream.Transform {
         return ((section[1] & 0x0f) << 8) | section[2];
     }
 
-    private static isRemovableDataStream(streamType: number): boolean {
-        return streamType === DataBroadcastFilterTransform.TYPE_D_STREAM_TYPE;
+    private static isRemovableDataStream(streamType: number, esInfo: Buffer, removeSuperimpose: boolean): boolean {
+        if (streamType === DataBroadcastFilterTransform.TYPE_D_STREAM_TYPE) {
+            return true;
+        }
+
+        if (removeSuperimpose === false || streamType !== DataBroadcastFilterTransform.PES_PRIVATE_DATA_STREAM_TYPE) {
+            return false;
+        }
+
+        const componentTag = DataBroadcastFilterTransform.getComponentTag(esInfo);
+        return (
+            componentTag === DataBroadcastFilterTransform.SUPERIMPOSE_COMPONENT_TAG ||
+            componentTag === DataBroadcastFilterTransform.SUPERIMPOSE_1SEG_COMPONENT_TAG
+        );
+    }
+
+    private static getComponentTag(esInfo: Buffer): number | null {
+        for (let pos = 0; pos + 2 <= esInfo.length; ) {
+            const tag = esInfo[pos];
+            const length = esInfo[pos + 1];
+            const descriptorEnd = pos + 2 + length;
+            if (descriptorEnd > esInfo.length) {
+                return null;
+            }
+
+            if (tag === DataBroadcastFilterTransform.STREAM_IDENTIFIER_DESCRIPTOR && length >= 1) {
+                return esInfo[pos + 2];
+            }
+
+            pos = descriptorEnd;
+        }
+
+        return null;
     }
 
     private static crc32Mpeg(data: Buffer): number {
@@ -641,6 +721,10 @@ export default class DataBroadcastFilterTransform extends stream.Transform {
     private static readonly PAT_PID = 0x0000;
     private static readonly PAT_TABLE_ID = 0x00;
     private static readonly PMT_TABLE_ID = 0x02;
+    private static readonly PES_PRIVATE_DATA_STREAM_TYPE = 0x06;
     private static readonly TYPE_D_STREAM_TYPE = 0x0d;
+    private static readonly STREAM_IDENTIFIER_DESCRIPTOR = 0x52;
+    private static readonly SUPERIMPOSE_COMPONENT_TAG = 0x38;
+    private static readonly SUPERIMPOSE_1SEG_COMPONENT_TAG = 0x88;
     private static readonly CRC_SIZE = 4;
 }

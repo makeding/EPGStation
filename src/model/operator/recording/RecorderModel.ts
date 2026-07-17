@@ -798,21 +798,44 @@ class RecorderModel implements IRecorderModel {
         const beforeStat = await fs.promises.stat(filePath);
         const sampleMode = this.reserve.programId === null ? 'start' : 'threePoint';
         const duration = this.reserve.programId === null ? 0 : this.reserve.endAt - this.reserve.startAt;
+        const removeSuperimpose = this.reserve.channelType === 'CS';
         const scanResult = await DataBroadcastFilterTransform.collectDataBroadcastInfoFromFile(filePath, duration, {
             logger: this.log,
             reserveId: this.reserve.id,
             sampleMode,
+            removeSuperimpose,
         });
         const dataBroadcastPids = scanResult.dataBroadcastPids;
-        const preserveDataBroadcastRanges = DataBroadcastFilterTransform.createDataBroadcastPreserveRanges(
-            beforeStat.size,
-            duration,
-            sampleMode,
-        );
+        const preserveDataBroadcastRanges = removeSuperimpose
+            ? []
+            : DataBroadcastFilterTransform.createDataBroadcastPreserveRanges(beforeStat.size, duration, sampleMode);
 
         if (dataBroadcastPids.size === 0) {
             this.log.system.info(`data broadcast pids not found reserveId: ${this.reserve.id}`);
             return;
+        }
+
+        if (removeSuperimpose === true) {
+            const removableBytes = await DataBroadcastFilterTransform.countPacketBytesFromFile(
+                filePath,
+                dataBroadcastPids,
+            );
+            const recordingDuration = Math.max(0, this.reserve.endAt - this.reserve.startAt);
+            const trimThreshold =
+                recordingDuration === 0
+                    ? RecorderModel.MIN_CS_DATA_BROADCAST_TRIM_BYTES_PER_30_MINUTES
+                    : Math.ceil(
+                          (RecorderModel.MIN_CS_DATA_BROADCAST_TRIM_BYTES_PER_30_MINUTES * recordingDuration) /
+                              RecorderModel.CS_DATA_BROADCAST_TRIM_BASE_DURATION,
+                      );
+            if (removableBytes < trimThreshold) {
+                this.log.system.info(
+                    `skip CS data broadcast trim because removable data is too small ` +
+                        `reserveId: ${this.reserve.id}, removable: ${removableBytes}, ` +
+                        `duration: ${recordingDuration}, threshold: ${trimThreshold}`,
+                );
+                return;
+            }
         }
 
         const tmpPath = `${filePath}.remove-data-broadcast.${process.pid}.${Date.now()}.tmp`;
@@ -831,6 +854,7 @@ class RecorderModel implements IRecorderModel {
                     dataBroadcastPids,
                     pmtPids: scanResult.pmtPids,
                     preserveDataBroadcastRanges,
+                    removeSuperimpose,
                 }),
                 fs.createWriteStream(tmpPath),
             );
@@ -1199,6 +1223,8 @@ namespace RecorderModel {
     export const CANCEL_EVENT = 'RecordingCancelEvent';
     export const START_RECORDING_EVENT = 'StartRecordingEvent';
     export const EVENT_RELAY_CHECK_TIME = 20 * 1000; // イベントリレーの確認時間 20秒
+    export const CS_DATA_BROADCAST_TRIM_BASE_DURATION = 30 * 60 * 1000;
+    export const MIN_CS_DATA_BROADCAST_TRIM_BYTES_PER_30_MINUTES = 8 * 1024 * 1024;
 }
 
 export default RecorderModel;
