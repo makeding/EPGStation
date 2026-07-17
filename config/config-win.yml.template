@@ -43,8 +43,9 @@ thumbnail: '%ROOT%/thumbnail'
 thumbnailSize: 480x270
 thumbnailPosition: 5
 
-ffmpeg: 'C:\rec\ffmpeg\bin\ffmpeg.exe'
-ffprobe: 'C:\rec\ffmpeg\bin\ffprobe.exe'
+ffmpeg: ffmpeg
+ffprobe: ffprobe
+tsreplace: tsreplace
 
 encodeProcessNum: 4
 concurrentEncodeNum: 1

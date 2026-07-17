@@ -150,7 +150,58 @@ class Configuration implements IConfiguration {
         // streamfiles のパス整形
         newConfig.streamFilePath = this.directoryFormatting(newConfig.streamFilePath);
 
+        newConfig.ffmpeg = this.resolveExecutable(newConfig.ffmpeg, 'ffmpeg');
+        newConfig.ffprobe = this.resolveExecutable(newConfig.ffprobe, 'ffprobe');
+        newConfig.tsreplace = this.resolveExecutable(newConfig.tsreplace, 'tsreplace');
+
         return newConfig;
+    }
+
+    private resolveExecutable(configured: string, fallbackName: string): string {
+        const configuredPath = this.findExecutable(configured);
+        if (configuredPath !== null) {
+            return configuredPath;
+        }
+
+        const fallbackPath = this.findExecutable(fallbackName);
+        if (fallbackPath !== null) {
+            if (configured !== fallbackName) {
+                this.log.system.warn(
+                    `${fallbackName} is not executable at configured path: ${configured}, fallback to PATH: ${fallbackPath}`,
+                );
+            }
+            return fallbackPath;
+        }
+
+        this.log.system.warn(`${fallbackName} executable was not found; using command name and deferring the error`);
+        return fallbackName;
+    }
+
+    private findExecutable(command: string): string | null {
+        if (command.length === 0) {
+            return null;
+        }
+
+        const hasDirectory = path.isAbsolute(command) || command.includes('/') || command.includes('\\');
+        const directories = hasDirectory ? [''] : (process.env.PATH ?? '').split(path.delimiter);
+        const extensions =
+            process.platform === 'win32' && path.extname(command).length === 0
+                ? (process.env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';')
+                : [''];
+
+        for (const directory of directories) {
+            for (const extension of extensions) {
+                const candidate = hasDirectory ? command + extension : path.join(directory, command + extension);
+                try {
+                    fs.accessSync(candidate, fs.constants.X_OK);
+                    return candidate;
+                } catch (_err: any) {
+                    continue;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -269,8 +320,9 @@ namespace Configuration {
         recordingBufferSize: 512, // 512MB
         recordingBufferWarningThreshold: 80, // 80%
         recordingWriteHighWaterMark: 4096, // 4MB
-        ffmpeg: '/usr/local/bin/ffmpeg',
-        ffprobe: '/usr/local/bin/ffprobe',
+        ffmpeg: 'ffmpeg',
+        ffprobe: 'ffprobe',
+        tsreplace: 'tsreplace',
         encodeProcessNum: 0,
         concurrentEncodeNum: 0,
         encode: [],

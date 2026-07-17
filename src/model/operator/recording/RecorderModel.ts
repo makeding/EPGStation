@@ -1,10 +1,10 @@
+import * as child_process from 'child_process';
 import * as events from 'events';
 import * as fs from 'fs';
 import * as http from 'http';
 import { inject, injectable } from 'inversify';
 import * as path from 'path';
 import * as stream from 'stream';
-import { pipeline } from 'stream/promises';
 import * as mapid from '../../../../node_modules/mirakurun/api';
 import * as apid from '../../../../api';
 import DropLogFile from '../../../db/entities/DropLogFile';
@@ -13,7 +13,6 @@ import RecordedHistory from '../../../db/entities/RecordedHistory';
 import Reserve from '../../../db/entities/Reserve';
 import VideoFile from '../../../db/entities/VideoFile';
 import BufferedWriteStream from '../../../lib/BufferedWriteStream';
-import DataBroadcastFilterTransform from '../../../lib/DataBroadcastFilterTransform';
 import FileUtil from '../../../util/FileUtil';
 import StrUtil from '../../../util/StrUtil';
 import IDropLogFileDB from '../../db/IDropLogFileDB';
@@ -61,6 +60,8 @@ class RecorderModel implements IRecorderModel {
     private passThroughStreamForWrite: stream.PassThrough | null = null;
     private bufferedWriteStream: BufferedWriteStream | null = null;
     private recFile: fs.WriteStream | null = null;
+    private tsreplaceProcess: child_process.ChildProcessWithoutNullStreams | null = null;
+    private tsreplaceCompletion: Promise<Error | null> | null = null;
     private isStopPrepRec: boolean = false;
     private isNeedDeleteReservation: boolean = true;
     private isPrepRecording: boolean = false;
@@ -275,6 +276,19 @@ class RecorderModel implements IRecorderModel {
             }
         }
 
+        if (this.tsreplaceProcess !== null) {
+            try {
+                this.tsreplaceProcess.stdin.destroy();
+                this.tsreplaceProcess.stdout.unpipe();
+                this.tsreplaceProcess.stdout.destroy();
+                this.tsreplaceProcess.stderr.destroy();
+                this.tsreplaceProcess.kill();
+            } catch (err: any) {
+                this.log.system.error(`destroy tsreplace error: ${this.reserve.id}`);
+                this.log.system.error(err);
+            }
+        }
+
         // stop buffered write stream
         if (this.bufferedWriteStream !== null) {
             try {
@@ -312,6 +326,90 @@ class RecorderModel implements IRecorderModel {
                 this.log.system.error(err);
             });
         }
+    }
+
+    private async startDataBroadcastFilter(): Promise<stream.Writable> {
+        if (this.bufferedWriteStream === null) {
+            throw new Error('BufferedWriteStreamIsNull');
+        }
+
+        const durationSec = Math.max(0, this.reserve.endAt - Date.now()) / 1000;
+        const args = ['-i', '-', '-o', '-', '--smart-remove-typed'];
+        if (durationSec > 0) {
+            args.push('--smart-remove-typed-duration', durationSec.toFixed(3));
+        }
+
+        this.log.system.info(
+            `start tsreplace: ${this.config.tsreplace} ${args.join(' ')} reserveId: ${this.reserve.id}`,
+        );
+
+        const filterProcess = child_process.spawn(this.config.tsreplace, args);
+        this.tsreplaceProcess = filterProcess;
+        this.tsreplaceCompletion = new Promise(resolve => {
+            let isResolved = false;
+            const finish = (error: Error | null) => {
+                if (isResolved === false) {
+                    isResolved = true;
+                    resolve(error);
+                }
+            };
+
+            filterProcess.once('error', finish);
+            filterProcess.once('close', (code, signal) => {
+                if (this.tsreplaceProcess === filterProcess) {
+                    this.tsreplaceProcess = null;
+                }
+                if (code === 0) {
+                    finish(null);
+                } else {
+                    finish(new Error(`tsreplace exited with code ${code}, signal ${signal ?? 'none'}`));
+                }
+            });
+        });
+
+        filterProcess.stderr.setEncoding('utf8');
+        let stderrBuffer = '';
+        filterProcess.stderr.on('data', (data: string) => {
+            stderrBuffer += data;
+            const lines = stderrBuffer.split(/[\r\n]+/);
+            stderrBuffer = lines.pop() ?? '';
+            for (const line of lines) {
+                if (line.length > 0) {
+                    this.log.system.debug(`tsreplace: ${line}`);
+                }
+            }
+        });
+        filterProcess.stderr.once('end', () => {
+            if (stderrBuffer.length > 0) {
+                this.log.system.debug(`tsreplace: ${stderrBuffer}`);
+            }
+        });
+
+        const spawnError = await new Promise<Error | null>(resolve => {
+            filterProcess.once('spawn', () => resolve(null));
+            filterProcess.once('error', err => resolve(err));
+        });
+        if (spawnError !== null) {
+            if (this.tsreplaceProcess === filterProcess) {
+                this.tsreplaceProcess = null;
+            }
+            this.tsreplaceCompletion = null;
+            this.log.system.error(`failed to start tsreplace; record raw TS instead reserveId: ${this.reserve.id}`);
+            this.log.system.error(spawnError);
+            return this.bufferedWriteStream;
+        }
+
+        filterProcess.stdin.on('error', err => {
+            this.log.system.error(`tsreplace stdin error reserveId: ${this.reserve.id}`);
+            this.log.system.error(err);
+        });
+        filterProcess.stdout.on('error', err => {
+            this.log.system.error(`tsreplace stdout error reserveId: ${this.reserve.id}`);
+            this.log.system.error(err);
+        });
+
+        filterProcess.stdout.pipe(this.bufferedWriteStream);
+        return filterProcess.stdin;
     }
 
     /**
@@ -383,6 +481,11 @@ class RecorderModel implements IRecorderModel {
                 `warning threshold: ${warningThreshold}%, reserveId: ${this.reserve.id}`,
         );
 
+        const recordingInput =
+            this.reserve.removeDataBroadcast === true
+                ? await this.startDataBroadcastFilter()
+                : this.bufferedWriteStream;
+
         // drop checker
         if (this.config.isEnabledDropCheck === true) {
             // drop checker 用に PassThrough を作成
@@ -415,12 +518,12 @@ class RecorderModel implements IRecorderModel {
                 }
             }
 
-            // stream -> PassThrough -> BufferedWriteStream
-            this.passThroughStreamForWrite.pipe(this.bufferedWriteStream);
+            // stream -> PassThrough -> tsreplace(optional) -> BufferedWriteStream
+            this.passThroughStreamForWrite.pipe(recordingInput);
             this.stream.pipe(this.passThroughStreamForWrite);
         } else {
-            // stream -> BufferedWriteStream
-            this.stream.pipe(this.bufferedWriteStream);
+            // stream -> tsreplace(optional) -> BufferedWriteStream
+            this.stream.pipe(recordingInput);
         }
 
         return new Promise<void>((resolve: () => void, reject: (error: Error) => void) => {
@@ -545,6 +648,7 @@ class RecorderModel implements IRecorderModel {
     private async setEndProcess(s: http.IncomingMessage): Promise<void> {
         this.log.system.info(`set stream.finished: reserveId: ${this.reserve.id} recordedId: ${this.recordedId}`);
         const writeFinishedTarget = this.bufferedWriteStream;
+        const tsreplaceCompletion = this.tsreplaceCompletion;
         if (writeFinishedTarget === null) {
             await this.recFailed(new Error('BufferedWriteStreamIsNull'));
 
@@ -582,6 +686,27 @@ class RecorderModel implements IRecorderModel {
                 );
                 await this.recFailed(err);
 
+                return;
+            }
+
+            if (tsreplaceCompletion !== null) {
+                const tsreplaceError = await tsreplaceCompletion;
+                if (tsreplaceError !== null) {
+                    this.log.system.error(
+                        `tsreplace failed reserveId: ${this.reserve.id} recordedId: ${this.recordedId}`,
+                    );
+                    this.log.system.error(tsreplaceError);
+                    await this.recFailed(tsreplaceError);
+                    return;
+                }
+            }
+
+            if (Date.now() + IRecordingStreamCreator.PREP_TIME < this.reserve.endAt) {
+                const earlyEndError = new Error('RecordingOutputEndedEarly');
+                this.log.system.error(
+                    `recording output ended early reserveId: ${this.reserve.id} recordedId: ${this.recordedId}`,
+                );
+                await this.recFailed(earlyEndError);
                 return;
             }
 
@@ -731,15 +856,6 @@ class RecorderModel implements IRecorderModel {
 
             // update video file size
             if (this.videoFileId !== null && this.videoFileFulPath !== null) {
-                if (this.reserve.removeDataBroadcast === true) {
-                    await this.removeDataBroadcastFromRecordedFile(this.videoFileFulPath).catch(err => {
-                        this.log.system.error(
-                            `remove data broadcast failed reserveId: ${this.reserve.id}, recordedId: ${this.recordedId}`,
-                        );
-                        this.log.system.error(err);
-                    });
-                }
-
                 this.recordingUtil.updateVideoFileSize(this.videoFileId).catch(err => {
                     this.log.system.error(`update file size error: ${this.videoFileId}`);
                     this.log.system.error(err);
@@ -792,90 +908,6 @@ class RecorderModel implements IRecorderModel {
         this.log.system.info(
             `recording finish reserveId: ${this.reserve.id}, recordedId: ${this.recordedId}, videoFileFulPath: ${this.videoFileFulPath}`,
         );
-    }
-
-    private async removeDataBroadcastFromRecordedFile(filePath: string): Promise<void> {
-        const beforeStat = await fs.promises.stat(filePath);
-        const sampleMode = this.reserve.programId === null ? 'start' : 'threePoint';
-        const duration = this.reserve.programId === null ? 0 : this.reserve.endAt - this.reserve.startAt;
-        const removeSuperimpose = this.reserve.channelType === 'CS';
-        const scanResult = await DataBroadcastFilterTransform.collectDataBroadcastInfoFromFile(filePath, duration, {
-            logger: this.log,
-            reserveId: this.reserve.id,
-            sampleMode,
-            removeSuperimpose,
-        });
-        const dataBroadcastPids = scanResult.dataBroadcastPids;
-        const preserveDataBroadcastRanges = removeSuperimpose
-            ? []
-            : DataBroadcastFilterTransform.createDataBroadcastPreserveRanges(beforeStat.size, duration, sampleMode);
-
-        if (dataBroadcastPids.size === 0) {
-            this.log.system.info(`data broadcast pids not found reserveId: ${this.reserve.id}`);
-            return;
-        }
-
-        if (removeSuperimpose === true) {
-            const removableBytes = await DataBroadcastFilterTransform.countPacketBytesFromFile(
-                filePath,
-                dataBroadcastPids,
-            );
-            const recordingDuration = Math.max(0, this.reserve.endAt - this.reserve.startAt);
-            const trimThreshold =
-                recordingDuration === 0
-                    ? RecorderModel.MIN_CS_DATA_BROADCAST_TRIM_BYTES_PER_30_MINUTES
-                    : Math.ceil(
-                          (RecorderModel.MIN_CS_DATA_BROADCAST_TRIM_BYTES_PER_30_MINUTES * recordingDuration) /
-                              RecorderModel.CS_DATA_BROADCAST_TRIM_BASE_DURATION,
-                      );
-            if (removableBytes < trimThreshold) {
-                this.log.system.info(
-                    `skip CS data broadcast trim because removable data is too small ` +
-                        `reserveId: ${this.reserve.id}, removable: ${removableBytes}, ` +
-                        `duration: ${recordingDuration}, threshold: ${trimThreshold}`,
-                );
-                return;
-            }
-        }
-
-        const tmpPath = `${filePath}.remove-data-broadcast.${process.pid}.${Date.now()}.tmp`;
-        this.log.system.info(
-            `trim data broadcast outside preserve ranges reserveId: ${this.reserve.id}, pids: ${Array.from(
-                dataBroadcastPids,
-            ).join(',')}, ranges: ${preserveDataBroadcastRanges.map(range => `${range.start}-${range.end}`).join(',')}`,
-        );
-
-        try {
-            await pipeline(
-                fs.createReadStream(filePath),
-                new DataBroadcastFilterTransform({
-                    logger: this.log,
-                    reserveId: this.reserve.id,
-                    dataBroadcastPids,
-                    pmtPids: scanResult.pmtPids,
-                    preserveDataBroadcastRanges,
-                    removeSuperimpose,
-                }),
-                fs.createWriteStream(tmpPath),
-            );
-
-            const stat = await fs.promises.stat(tmpPath);
-            if (stat.size === 0) {
-                throw new Error('RemoveDataBroadcastOutputIsEmpty');
-            }
-
-            await fs.promises.rename(tmpPath, filePath);
-            const removedBytes = beforeStat.size - stat.size;
-            const removedPercent = beforeStat.size === 0 ? 0 : (removedBytes / beforeStat.size) * 100;
-            this.log.system.info(
-                `remove data broadcast done reserveId: ${this.reserve.id}, before: ${beforeStat.size}, after: ${
-                    stat.size
-                }, removed: ${removedBytes} (${removedPercent.toFixed(3)}%)`,
-            );
-        } catch (err: any) {
-            await FileUtil.unlink(tmpPath).catch(() => {});
-            throw err;
-        }
     }
 
     /**
@@ -1223,8 +1255,6 @@ namespace RecorderModel {
     export const CANCEL_EVENT = 'RecordingCancelEvent';
     export const START_RECORDING_EVENT = 'StartRecordingEvent';
     export const EVENT_RELAY_CHECK_TIME = 20 * 1000; // イベントリレーの確認時間 20秒
-    export const CS_DATA_BROADCAST_TRIM_BASE_DURATION = 30 * 60 * 1000;
-    export const MIN_CS_DATA_BROADCAST_TRIM_BYTES_PER_30_MINUTES = 8 * 1024 * 1024;
 }
 
 export default RecorderModel;
