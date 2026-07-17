@@ -798,14 +798,16 @@ class RecorderModel implements IRecorderModel {
         const beforeStat = await fs.promises.stat(filePath);
         const sampleMode = this.reserve.programId === null ? 'start' : 'threePoint';
         const duration = this.reserve.programId === null ? 0 : this.reserve.endAt - this.reserve.startAt;
-        const dataBroadcastPids = await DataBroadcastFilterTransform.collectDataBroadcastPidsFromFile(
-            filePath,
+        const scanResult = await DataBroadcastFilterTransform.collectDataBroadcastInfoFromFile(filePath, duration, {
+            logger: this.log,
+            reserveId: this.reserve.id,
+            sampleMode,
+        });
+        const dataBroadcastPids = scanResult.dataBroadcastPids;
+        const preserveDataBroadcastRanges = DataBroadcastFilterTransform.createDataBroadcastPreserveRanges(
+            beforeStat.size,
             duration,
-            {
-                logger: this.log,
-                reserveId: this.reserve.id,
-                sampleMode,
-            },
+            sampleMode,
         );
 
         if (dataBroadcastPids.size === 0) {
@@ -815,7 +817,9 @@ class RecorderModel implements IRecorderModel {
 
         const tmpPath = `${filePath}.remove-data-broadcast.${process.pid}.${Date.now()}.tmp`;
         this.log.system.info(
-            `remove data broadcast pids reserveId: ${this.reserve.id}, pids: ${Array.from(dataBroadcastPids).join(',')}`,
+            `trim data broadcast outside preserve ranges reserveId: ${this.reserve.id}, pids: ${Array.from(
+                dataBroadcastPids,
+            ).join(',')}, ranges: ${preserveDataBroadcastRanges.map(range => `${range.start}-${range.end}`).join(',')}`,
         );
 
         try {
@@ -825,6 +829,8 @@ class RecorderModel implements IRecorderModel {
                     logger: this.log,
                     reserveId: this.reserve.id,
                     dataBroadcastPids,
+                    pmtPids: scanResult.pmtPids,
+                    preserveDataBroadcastRanges,
                 }),
                 fs.createWriteStream(tmpPath),
             );
