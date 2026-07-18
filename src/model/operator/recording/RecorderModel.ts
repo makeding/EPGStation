@@ -481,10 +481,14 @@ class RecorderModel implements IRecorderModel {
                 `warning threshold: ${warningThreshold}%, reserveId: ${this.reserve.id}`,
         );
 
-        const recordingInput =
-            this.reserve.removeDataBroadcast === true
-                ? await this.startDataBroadcastFilter()
-                : this.bufferedWriteStream;
+        const shouldRemoveDataBroadcast =
+            this.reserve.removeDataBroadcast === true && this.reserve.channelType !== 'BS4K';
+        if (this.reserve.removeDataBroadcast === true && this.reserve.channelType === 'BS4K') {
+            this.log.system.info(`skip data broadcast trim for BS4K reserveId: ${this.reserve.id}`);
+        }
+        const recordingInput = shouldRemoveDataBroadcast
+            ? await this.startDataBroadcastFilter()
+            : this.bufferedWriteStream;
 
         // drop checker
         if (this.config.isEnabledDropCheck === true) {
