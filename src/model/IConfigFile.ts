@@ -167,6 +167,15 @@ export default interface IConfigFile {
     recordingBufferWarningThreshold?: number; // 警告閾値 (パーセント)、デフォルト 80
     recordingWriteHighWaterMark?: number; // WriteStream バッファ (KB)、デフォルト 4096
 
+    // 録画中のリアルタイムエンコード (未設定なら無効)
+    realtimeEncode?: {
+        name: string; // VideoFile に表示する名前
+        cmd: string; // stdin から入力し stdout に出力するコマンド
+        suffix: string; // 完成ファイルの suffix (例: .hevc.ts)
+        durationTolerance?: number; // 元ファイルとの許容時間差 (秒)、デフォルト 2
+        maxBufferSize?: number; // 旁路入力キュー上限 (MB)、デフォルト 256
+    };
+
     // upload
     uploadTempDir: string;
 

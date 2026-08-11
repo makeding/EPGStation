@@ -107,6 +107,23 @@ class Configuration implements IConfiguration {
             newConfig.recordedBS4KFormat = 'm2ts';
         }
 
+        if (typeof newConfig.realtimeEncode !== 'undefined') {
+            const realtimeEncode = newConfig.realtimeEncode;
+            if (
+                typeof realtimeEncode.name !== 'string' ||
+                realtimeEncode.name.length === 0 ||
+                typeof realtimeEncode.cmd !== 'string' ||
+                realtimeEncode.cmd.length === 0 ||
+                typeof realtimeEncode.suffix !== 'string' ||
+                realtimeEncode.suffix.startsWith('.') === false ||
+                path.basename(realtimeEncode.suffix) !== realtimeEncode.suffix ||
+                (typeof realtimeEncode.durationTolerance !== 'undefined' && realtimeEncode.durationTolerance < 0) ||
+                (typeof realtimeEncode.maxBufferSize !== 'undefined' && realtimeEncode.maxBufferSize <= 0)
+            ) {
+                throw new Error('RealtimeEncodeConfigError');
+            }
+        }
+
         // http or https の設定が存在するかチェック
         if (
             typeof newConfig.port === 'undefined' &&

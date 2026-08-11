@@ -47,6 +47,19 @@ ffmpeg: ffmpeg
 ffprobe: ffprobe
 tsreplace: tsreplace
 
+# 録画中リアルタイムエンコード (未設定なら無効)
+# 原始 TS は従来どおり保存し、このコマンドには同じ入力を旁路で渡します。
+# コマンドは stdin から TS を受け、stdout に完成 TS を出力してください。
+# %DATA_BROADCAST_ARGS% は予約の「データ放送を除去」が有効な場合のみ
+# tsreplace の --smart-remove-typed 引数へ展開されます。
+# realtimeEncode:
+#     name: HEVC
+#     cmd: '%TSREPLACE% -i - -o - %DATA_BROADCAST_ARGS% -e %FFMPEG% -y -f mpegts -i - -copyts -start_at_zero -an -c:v libx265 -preset ultrafast -crf 23 -g 90 -f mpegts -'
+#     suffix: .hevc.ts
+#     durationTolerance: 2
+#     maxBufferSize: 256
+# H.264 の場合は -c:v libx265 を -c:v libx264 に変更し、suffix を .h264.ts にします。
+
 encodeProcessNum: 4
 concurrentEncodeNum: 1
 encode:

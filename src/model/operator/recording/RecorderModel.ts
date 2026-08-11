@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as http from 'http';
 import { inject, injectable } from 'inversify';
 import * as path from 'path';
+import * as shellQuote from 'shell-quote';
 import * as stream from 'stream';
 import * as mapid from '../../../../node_modules/mirakurun/api';
 import * as apid from '../../../../api';
@@ -12,8 +13,10 @@ import Recorded from '../../../db/entities/Recorded';
 import RecordedHistory from '../../../db/entities/RecordedHistory';
 import Reserve from '../../../db/entities/Reserve';
 import VideoFile from '../../../db/entities/VideoFile';
+import BoundedProcessInput from '../../../lib/BoundedProcessInput';
 import BufferedWriteStream from '../../../lib/BufferedWriteStream';
 import FileUtil from '../../../util/FileUtil';
+import ProcessUtil from '../../../util/ProcessUtil';
 import StrUtil from '../../../util/StrUtil';
 import IDropLogFileDB from '../../db/IDropLogFileDB';
 import IProgramDB from '../../db/IProgramDB';
@@ -31,6 +34,11 @@ import IDropCheckerModel from './IDropCheckerModel';
 import IRecorderModel from './IRecorderModel';
 import IRecordingStreamCreator from './IRecordingStreamCreator';
 import IRecordingUtilModel, { RecFilePathInfo } from './IRecordingUtilModel';
+
+interface ProbeInfo {
+    duration: number;
+    streamTypes: string[];
+}
 
 /**
  * Recorder
@@ -62,6 +70,15 @@ class RecorderModel implements IRecorderModel {
     private recFile: fs.WriteStream | null = null;
     private tsreplaceProcess: child_process.ChildProcessWithoutNullStreams | null = null;
     private tsreplaceCompletion: Promise<Error | null> | null = null;
+    private realtimeEncodeProcess: child_process.ChildProcessWithoutNullStreams | null = null;
+    private realtimeEncodeInput: BoundedProcessInput | null = null;
+    private realtimeEncodeCompletion: Promise<Error | null> | null = null;
+    private realtimeEncodeError: Error | null = null;
+    private realtimeEncodeProcessingPath: string | null = null;
+    private realtimeEncodeFinalPath: string | null = null;
+    private realtimeEncodeOnData: ((chunk: Buffer) => void) | null = null;
+    private realtimeEncodeOnEnd: (() => void) | null = null;
+    private realtimeEncodeKillTimer: NodeJS.Timeout | null = null;
     private isStopPrepRec: boolean = false;
     private isNeedDeleteReservation: boolean = true;
     private isPrepRecording: boolean = false;
@@ -289,6 +306,10 @@ class RecorderModel implements IRecorderModel {
             }
         }
 
+        if (this.realtimeEncodeProcess !== null || this.realtimeEncodeInput !== null) {
+            this.abortRealtimeEncode(new Error('RecordingStreamDestroyed'));
+        }
+
         // stop buffered write stream
         if (this.bufferedWriteStream !== null) {
             try {
@@ -412,6 +433,423 @@ class RecorderModel implements IRecorderModel {
         return filterProcess.stdin;
     }
 
+    private async startRealtimeEncode(recPath: RecFilePathInfo): Promise<boolean> {
+        const realtimeEncode = this.config.realtimeEncode;
+        if (typeof realtimeEncode === 'undefined' || this.stream === null) {
+            return false;
+        }
+        if (this.reserve.channelType === 'BS4K' && this.config.recordedBS4KFormat === 'mmts') {
+            this.log.system.info(`skip realtime encode for raw BS4K MMTS reserveId: ${this.reserve.id}`);
+            return false;
+        }
+
+        const outputPaths = await this.getRealtimeEncodeOutputPaths(recPath.fullPath, realtimeEncode.suffix);
+        const output = fs.createWriteStream(outputPaths.processing, { flags: 'wx' });
+        let command: { bin: string; args: string[] };
+        try {
+            command = this.parseRealtimeEncodeCommand(realtimeEncode.cmd);
+        } catch (err: any) {
+            output.destroy();
+            await FileUtil.unlink(outputPaths.processing).catch(() => {});
+            this.log.system.error(`invalid realtime encode command reserveId: ${this.reserve.id}`);
+            this.log.system.error(err);
+            return false;
+        }
+
+        this.log.system.info(
+            `start realtime encode: ${command.bin} ${command.args.join(' ')} ` +
+                `output: ${outputPaths.processing}, reserveId: ${this.reserve.id}`,
+        );
+
+        let encodeProcess: child_process.ChildProcessWithoutNullStreams;
+        try {
+            encodeProcess = child_process.spawn(command.bin, command.args);
+        } catch (err: any) {
+            output.destroy();
+            await FileUtil.unlink(outputPaths.processing).catch(() => {});
+            this.log.system.error(`failed to start realtime encode reserveId: ${this.reserve.id}`);
+            this.log.system.error(err);
+            return false;
+        }
+
+        this.realtimeEncodeProcess = encodeProcess;
+        this.realtimeEncodeProcessingPath = outputPaths.processing;
+        this.realtimeEncodeFinalPath = null;
+        this.realtimeEncodeError = null;
+
+        encodeProcess.stderr.setEncoding('utf8');
+        let stderrBuffer = '';
+        encodeProcess.stderr.on('data', (data: string) => {
+            stderrBuffer += data;
+            const lines = stderrBuffer.split(/[\r\n]+/);
+            stderrBuffer = lines.pop() ?? '';
+            for (const line of lines) {
+                if (line.length > 0) {
+                    this.log.system.debug(`realtime encode: ${line}`);
+                }
+            }
+        });
+        encodeProcess.stderr.once('end', () => {
+            if (stderrBuffer.length > 0) {
+                this.log.system.debug(`realtime encode: ${stderrBuffer}`);
+            }
+        });
+
+        const processCompletion = new Promise<Error | null>(resolve => {
+            let isResolved = false;
+            const finish = (error: Error | null) => {
+                if (isResolved === false) {
+                    isResolved = true;
+                    resolve(error);
+                }
+            };
+            encodeProcess.once('error', finish);
+            encodeProcess.once('close', (code, signal) => {
+                if (code === 0) {
+                    finish(null);
+                } else {
+                    finish(new Error(`realtime encode exited with code ${code}, signal ${signal ?? 'none'}`));
+                }
+            });
+        });
+        const outputCompletion = new Promise<Error | null>(resolve => {
+            stream.finished(output, {}, err => resolve(err ?? null));
+        });
+
+        encodeProcess.stdout.pipe(output);
+        output.once('error', err => this.abortRealtimeEncode(err));
+
+        const maxBufferSize = (realtimeEncode.maxBufferSize ?? 256) * 1024 * 1024;
+        this.realtimeEncodeInput = new BoundedProcessInput(encodeProcess.stdin, maxBufferSize, err => {
+            this.abortRealtimeEncode(err);
+        });
+
+        this.realtimeEncodeCompletion = Promise.all([processCompletion, outputCompletion]).then(async results => {
+            if (this.realtimeEncodeKillTimer !== null) {
+                clearTimeout(this.realtimeEncodeKillTimer);
+                this.realtimeEncodeKillTimer = null;
+            }
+            this.removeRealtimeEncodeStreamListeners();
+            if (this.realtimeEncodeProcess === encodeProcess) {
+                this.realtimeEncodeProcess = null;
+            }
+            this.realtimeEncodeInput = null;
+
+            const error = this.realtimeEncodeError ?? results.find(result => result !== null) ?? null;
+            if (error !== null) {
+                await FileUtil.unlink(outputPaths.processing).catch(() => {});
+            }
+            return error;
+        });
+
+        const spawnError = await new Promise<Error | null>(resolve => {
+            encodeProcess.once('spawn', () => resolve(null));
+            encodeProcess.once('error', err => resolve(err));
+        });
+        if (spawnError !== null) {
+            this.abortRealtimeEncode(spawnError);
+            await this.realtimeEncodeCompletion;
+            this.realtimeEncodeCompletion = null;
+            this.realtimeEncodeProcessingPath = null;
+            this.log.system.error(
+                `failed to start realtime encode; continue raw recording reserveId: ${this.reserve.id}`,
+            );
+            this.log.system.error(spawnError);
+            return false;
+        }
+
+        return true;
+    }
+
+    private attachRealtimeEncodeStream(): void {
+        if (this.stream === null || this.realtimeEncodeInput === null) {
+            return;
+        }
+        this.realtimeEncodeOnData = (chunk: Buffer) => this.realtimeEncodeInput?.write(chunk);
+        this.realtimeEncodeOnEnd = () => this.realtimeEncodeInput?.end();
+        this.stream.on('data', this.realtimeEncodeOnData);
+        this.stream.once('end', this.realtimeEncodeOnEnd);
+    }
+
+    private parseRealtimeEncodeCommand(command: string): { bin: string; args: string[] } {
+        const parsed = shellQuote.parse(command);
+        const tokens: string[] = [];
+        const durationSec = Math.max(0, this.reserve.endAt - Date.now()) / 1000;
+        const shouldRemoveDataBroadcast =
+            this.reserve.removeDataBroadcast === true && this.reserve.channelType !== 'BS4K';
+
+        for (const entry of parsed) {
+            if (typeof entry !== 'string') {
+                throw new Error('RealtimeEncodeCommandDoesNotSupportShellOperators');
+            }
+            if (entry === '%DATA_BROADCAST_ARGS%') {
+                if (shouldRemoveDataBroadcast === true) {
+                    tokens.push('--smart-remove-typed');
+                    if (durationSec > 0) {
+                        tokens.push('--smart-remove-typed-duration', durationSec.toFixed(3));
+                    }
+                }
+                continue;
+            }
+            if (entry.includes('%DATA_BROADCAST_ARGS%')) {
+                throw new Error('DATA_BROADCAST_ARGSMustBeASeparateArgument');
+            }
+
+            tokens.push(
+                entry
+                    .replace(/%TSREPLACE%/g, this.config.tsreplace)
+                    .replace(/%FFMPEG%/g, this.config.ffmpeg)
+                    .replace(/%FFPROBE%/g, this.config.ffprobe)
+                    .replace(/%NODE%/g, process.argv[0])
+                    .replace(/%ROOT%/g, ProcessUtil.ROOT_PATH),
+            );
+        }
+
+        const bin = tokens.shift();
+        if (typeof bin === 'undefined' || bin.length === 0) {
+            throw new Error('RealtimeEncodeCommandIsEmpty');
+        }
+        return { bin: bin, args: tokens };
+    }
+
+    private async getRealtimeEncodeOutputPaths(
+        rawPath: string,
+        suffix: string,
+    ): Promise<{ final: string; processing: string }> {
+        const extension = path.extname(rawPath);
+        const stem = rawPath.slice(0, rawPath.length - extension.length);
+        let conflict = 0;
+        while (true) {
+            const conflictSuffix = conflict === 0 ? '' : `(${conflict})`;
+            const finalPath = `${stem}${conflictSuffix}${suffix}`;
+            const processingPath = `${finalPath}.processing`;
+            const isUsed = await Promise.all([
+                fs.promises.access(finalPath).then(
+                    () => true,
+                    () => false,
+                ),
+                fs.promises.access(processingPath).then(
+                    () => true,
+                    () => false,
+                ),
+            ]);
+            if (isUsed.every(value => value === false)) {
+                return { final: finalPath, processing: processingPath };
+            }
+            conflict++;
+        }
+    }
+
+    private abortRealtimeEncode(error: Error): void {
+        if (this.realtimeEncodeError === null) {
+            this.realtimeEncodeError = error;
+            this.log.system.error(`realtime encode sidecar failed reserveId: ${this.reserve.id}`);
+            this.log.system.error(error);
+        }
+        this.removeRealtimeEncodeStreamListeners();
+        if (this.realtimeEncodeInput !== null) {
+            this.realtimeEncodeInput.destroy();
+            this.realtimeEncodeInput = null;
+        }
+        if (this.realtimeEncodeProcess !== null) {
+            this.realtimeEncodeProcess.kill('SIGINT');
+            if (this.realtimeEncodeKillTimer === null) {
+                const processToKill = this.realtimeEncodeProcess;
+                this.realtimeEncodeKillTimer = setTimeout(() => {
+                    if (this.realtimeEncodeProcess === processToKill) {
+                        processToKill.kill('SIGKILL');
+                    }
+                    this.realtimeEncodeKillTimer = null;
+                }, 3000);
+            }
+        }
+    }
+
+    private removeRealtimeEncodeStreamListeners(): void {
+        if (this.stream !== null && this.realtimeEncodeOnData !== null) {
+            this.stream.removeListener('data', this.realtimeEncodeOnData);
+        }
+        if (this.stream !== null && this.realtimeEncodeOnEnd !== null) {
+            this.stream.removeListener('end', this.realtimeEncodeOnEnd);
+        }
+        this.realtimeEncodeOnData = null;
+        this.realtimeEncodeOnEnd = null;
+    }
+
+    private async finishRealtimeEncode(rawPath: string): Promise<void> {
+        if (this.realtimeEncodeCompletion === null || this.realtimeEncodeProcessingPath === null) {
+            return;
+        }
+
+        const completion = this.realtimeEncodeCompletion;
+        const processingPath = this.realtimeEncodeProcessingPath;
+        this.realtimeEncodeCompletion = null;
+        const finishTimeout = new Error('RealtimeEncodeFinishTimeout');
+        let timeoutId: NodeJS.Timeout | null = null;
+        let error = await Promise.race([
+            completion,
+            new Promise<Error>(resolve => {
+                timeoutId = setTimeout(() => resolve(finishTimeout), 60 * 1000);
+            }),
+        ]);
+        if (timeoutId !== null) {
+            clearTimeout(timeoutId);
+        }
+        if (error === finishTimeout) {
+            this.abortRealtimeEncode(finishTimeout);
+            error = await completion;
+        }
+        if (error !== null) {
+            this.realtimeEncodeProcessingPath = null;
+            return;
+        }
+
+        try {
+            await this.validateRealtimeEncode(rawPath, processingPath);
+            const realtimeEncode = this.config.realtimeEncode;
+            if (typeof realtimeEncode === 'undefined') {
+                throw new Error('RealtimeEncodeConfigIsUndefined');
+            }
+            const finalPath = processingPath.slice(0, -'.processing'.length);
+            await fs.promises.rename(processingPath, finalPath);
+            this.realtimeEncodeProcessingPath = null;
+            this.realtimeEncodeFinalPath = finalPath;
+            this.log.system.info(`realtime encode validated: ${finalPath}, reserveId: ${this.reserve.id}`);
+        } catch (err: any) {
+            this.log.system.error(`realtime encode validation failed reserveId: ${this.reserve.id}`);
+            this.log.system.error(err);
+            await FileUtil.unlink(processingPath).catch(() => {});
+            this.realtimeEncodeProcessingPath = null;
+        }
+    }
+
+    private async validateRealtimeEncode(rawPath: string, encodedPath: string): Promise<void> {
+        const [rawStat, encodedStat, rawInfo, encodedInfo] = await Promise.all([
+            fs.promises.stat(rawPath),
+            fs.promises.stat(encodedPath),
+            this.probeFile(rawPath),
+            this.probeFile(encodedPath),
+        ]);
+        if (rawStat.size === 0 || encodedStat.size === 0) {
+            throw new Error('RealtimeEncodeOutputIsEmpty');
+        }
+        if (rawInfo.streamTypes.includes('video') === false || encodedInfo.streamTypes.includes('video') === false) {
+            throw new Error('RealtimeEncodeVideoStreamIsMissing');
+        }
+        if (rawInfo.streamTypes.includes('audio') && encodedInfo.streamTypes.includes('audio') === false) {
+            throw new Error('RealtimeEncodeAudioStreamIsMissing');
+        }
+
+        const tolerance = this.config.realtimeEncode?.durationTolerance ?? 2;
+        const durationDifference = Math.abs(rawInfo.duration - encodedInfo.duration);
+        if (durationDifference > tolerance) {
+            throw new Error(`RealtimeEncodeDurationMismatch: ${durationDifference.toFixed(3)} > ${tolerance}`);
+        }
+    }
+
+    private probeFile(filePath: string): Promise<ProbeInfo> {
+        return new Promise<ProbeInfo>((resolve, reject) => {
+            child_process.execFile(
+                this.config.ffprobe,
+                [
+                    '-v',
+                    'error',
+                    '-show_entries',
+                    'format=duration',
+                    '-show_entries',
+                    'stream=codec_type',
+                    '-of',
+                    'json',
+                    filePath,
+                ],
+                (err, stdout) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+                    try {
+                        const result = JSON.parse(stdout);
+                        const duration = Number(result.format?.duration);
+                        if (Number.isFinite(duration) === false || duration <= 0) {
+                            throw new Error('ProbeDurationIsInvalid');
+                        }
+                        resolve({
+                            duration: duration,
+                            streamTypes: Array.isArray(result.streams)
+                                ? result.streams.map((item: any) => String(item.codec_type))
+                                : [],
+                        });
+                    } catch (parseError: any) {
+                        reject(parseError);
+                    }
+                },
+            );
+        });
+    }
+
+    private async publishRealtimeEncode(): Promise<void> {
+        if (
+            this.realtimeEncodeFinalPath === null ||
+            this.recordedId === null ||
+            this.videoFileId === null ||
+            this.videoFileFulPath === null ||
+            typeof this.config.realtimeEncode === 'undefined'
+        ) {
+            return;
+        }
+
+        const rawVideoFile = await this.videoFileDB.findId(this.videoFileId);
+        if (rawVideoFile === null) {
+            throw new Error('RawVideoFileIsNotFound');
+        }
+
+        const currentPath = this.realtimeEncodeFinalPath;
+        const rawExtension = path.extname(this.videoFileFulPath);
+        const expectedPath =
+            this.videoFileFulPath.slice(0, this.videoFileFulPath.length - rawExtension.length) +
+            this.config.realtimeEncode.suffix;
+        let publishedPath = currentPath;
+        if (currentPath !== expectedPath) {
+            const targetPaths = await this.getRealtimeEncodeOutputPaths(
+                this.videoFileFulPath,
+                this.config.realtimeEncode.suffix,
+            );
+            try {
+                await fs.promises.rename(currentPath, targetPaths.final);
+            } catch (_renameError: any) {
+                await fs.promises.copyFile(currentPath, targetPaths.final, fs.constants.COPYFILE_EXCL);
+                await fs.promises.unlink(currentPath);
+            }
+            publishedPath = targetPaths.final;
+        }
+
+        try {
+            const videoFile = new VideoFile();
+            videoFile.parentDirectoryName = rawVideoFile.parentDirectoryName;
+            videoFile.filePath = path.join(path.dirname(rawVideoFile.filePath), path.basename(publishedPath));
+            videoFile.type = 'encoded';
+            videoFile.name = this.config.realtimeEncode.name;
+            videoFile.size = (await fs.promises.stat(publishedPath)).size;
+            videoFile.recordedId = this.recordedId;
+            await this.videoFileDB.insertOnce(videoFile);
+            this.realtimeEncodeFinalPath = null;
+            this.log.system.info(`published realtime encode: ${videoFile.filePath}, reserveId: ${this.reserve.id}`);
+        } catch (err: any) {
+            await FileUtil.unlink(publishedPath).catch(() => {});
+            this.realtimeEncodeFinalPath = null;
+            throw err;
+        }
+    }
+
+    private async cleanupRealtimeEncodeFiles(): Promise<void> {
+        const paths = [this.realtimeEncodeProcessingPath, this.realtimeEncodeFinalPath];
+        this.realtimeEncodeProcessingPath = null;
+        this.realtimeEncodeFinalPath = null;
+        await Promise.all(
+            paths.map(filePath => (filePath === null ? Promise.resolve() : FileUtil.unlink(filePath).catch(() => {}))),
+        );
+    }
+
     /**
      * 録画処理
      */
@@ -486,9 +924,14 @@ class RecorderModel implements IRecorderModel {
         if (this.reserve.removeDataBroadcast === true && this.reserve.channelType === 'BS4K') {
             this.log.system.info(`skip data broadcast trim for BS4K reserveId: ${this.reserve.id}`);
         }
-        const recordingInput = shouldRemoveDataBroadcast
-            ? await this.startDataBroadcastFilter()
-            : this.bufferedWriteStream;
+        // Realtime encode is an optional sidecar. While it is active, the primary
+        // file always receives the untouched TS and remains the only recording
+        // success criterion. Type-D trimming is expanded into the sidecar command.
+        const isRealtimeEncodeStarted = await this.startRealtimeEncode(recPath);
+        const recordingInput =
+            isRealtimeEncodeStarted === false && shouldRemoveDataBroadcast
+                ? await this.startDataBroadcastFilter()
+                : this.bufferedWriteStream;
 
         // drop checker
         if (this.config.isEnabledDropCheck === true) {
@@ -523,11 +966,15 @@ class RecorderModel implements IRecorderModel {
             }
 
             // stream -> PassThrough -> tsreplace(optional) -> BufferedWriteStream
+            //        \-> bounded realtime encode sidecar (optional)
             this.passThroughStreamForWrite.pipe(recordingInput);
             this.stream.pipe(this.passThroughStreamForWrite);
+            this.attachRealtimeEncodeStream();
         } else {
             // stream -> tsreplace(optional) -> BufferedWriteStream
+            //        \-> bounded realtime encode sidecar (optional)
             this.stream.pipe(recordingInput);
+            this.attachRealtimeEncodeStream();
         }
 
         return new Promise<void>((resolve: () => void, reject: (error: Error) => void) => {
@@ -705,6 +1152,10 @@ class RecorderModel implements IRecorderModel {
                 }
             }
 
+            if (this.videoFileFulPath !== null) {
+                await this.finishRealtimeEncode(this.videoFileFulPath);
+            }
+
             if (Date.now() + IRecordingStreamCreator.PREP_TIME < this.reserve.endAt) {
                 const earlyEndError = new Error('RecordingOutputEndedEarly');
                 this.log.system.error(
@@ -838,6 +1289,8 @@ class RecorderModel implements IRecorderModel {
                 });
             }
 
+            await this.cleanupRealtimeEncodeFiles();
+
             return;
         }
 
@@ -856,6 +1309,17 @@ class RecorderModel implements IRecorderModel {
                     this.log.system.fatal(`movingFromTmp error: ${this.videoFileId}`);
                     this.log.system.fatal(err);
                 }
+            }
+
+            if (this.isRecordingFailed === true) {
+                await this.cleanupRealtimeEncodeFiles();
+            } else {
+                await this.publishRealtimeEncode().catch(err => {
+                    this.log.system.error(
+                        `publish realtime encode failed reserveId: ${this.reserve.id}, recordedId: ${this.recordedId}`,
+                    );
+                    this.log.system.error(err);
+                });
             }
 
             // update video file size
