@@ -12,6 +12,8 @@ export interface HttpsConfig {
 export interface RecordedDirInfo {
     name: string;
     path: string;
+    warningThreshold?: number; // 容量警告閾値 (MB)
+    criticalThreshold?: number; // 容量重大警告閾値 (MB)
     limitThreshold?: number; // 空き容量限界閾値 (MB)
     action?: 'remove' | 'none'; // 空き容量限界値を超えたときの動作
     limitCmd?: string; // 空き容量限界値を超えたときに実行するコマンド
@@ -36,8 +38,18 @@ export interface KodiInfo {
     password?: string;
 }
 
-export type NotificationEvent = 'recordingStart' | 'recordingFinish' | 'recordingFailed';
+export type NotificationEvent = 'recordingStart' | 'recordingFinish' | 'recordingFailed' | 'storageWarning';
 export type NotificationTrigger = NotificationEvent | NotificationEvent[];
+
+export type StorageWarningLevel = 'warning' | 'critical' | 'limit';
+
+export interface StorageWarning {
+    level: StorageWarningLevel;
+    name: string;
+    path: string;
+    free: number;
+    threshold: number;
+}
 
 export interface NotificationTelegramConfig {
     name?: string;
@@ -114,6 +126,8 @@ export default interface IConfigFile {
 
     // epg 更新時間間隔 (分)
     epgUpdateIntervalTime: number;
+    epgUpdaterMode: 'fork' | 'external';
+    epgUpdateNotifyUrl?: string;
 
     // 放送局並び順
     channelOrder?: apid.ChannelId[];

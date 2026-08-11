@@ -42,7 +42,7 @@ export default class WatchRecordedStreaming extends Vue {
         const videoFileId = parseInt(this.$route.params.id, 10);
         this.recordedId = typeof this.$route.query.recordedId !== 'string' ? null : parseInt(this.$route.query.recordedId, 10);
         const streamingType = typeof this.$route.query.streamingType !== 'string' ? null : this.$route.query.streamingType;
-        const streamType = typeof this.$route.query.streamType !== 'string' || this.$route.query.streamType !== 'mmts' ? 'mse' : this.$route.query.streamType;
+        const streamType = 'tlv';
         const isChase = this.$route.query.isChase === 'true';
         const mode = typeof this.$route.query.mode !== 'string' ? null : parseInt(this.$route.query.mode, 10);
 

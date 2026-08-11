@@ -133,6 +133,12 @@ const cleanup = async () => {
  * EPGUpdater 起動処理
  */
 const runEPGUpdater = async () => {
+    const config = container.get<IConfiguration>('IConfiguration').getConfig();
+    if (config.epgUpdaterMode === 'external') {
+        container.get<ILoggerModel>('ILoggerModel').getLogger().system.info('EPG updater is managed externally');
+        return;
+    }
+
     const epgUpdateExecutorManageModel = container.get<IEPGUpdateExecutorManageModel>('IEPGUpdateExecutorManageModel');
     epgUpdateExecutorManageModel.execute();
 };

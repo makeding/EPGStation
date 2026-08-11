@@ -1,0 +1,9 @@
+[Unit]
+Description=Update EPGStation EPG once
+After=network-online.target epgstation.service
+
+[Service]
+Type=oneshot
+User=epgstation
+WorkingDirectory=/opt/EPGStation
+ExecStart=/usr/bin/npm run epg:update

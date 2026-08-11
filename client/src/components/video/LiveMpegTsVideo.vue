@@ -1,7 +1,7 @@
 <template>
     <div class="live-mpegts-video">
         <video ref="video" autoplay playsinline></video>
-        <div v-if="streamType === 'mmts'" ref="b62Overlay" class="b62-overlay"></div>
+        <div v-if="streamType === 'tlv'" ref="b62Overlay" class="b62-overlay"></div>
     </div>
 </template>
 
@@ -9,11 +9,10 @@
 import BaseVideo from '@/components/video/BaseVideo';
 import container from '@/model/ModelContainer';
 import ISnackbarState from '@/model/state/snackbar/ISnackbarState';
-import * as aribb24js from 'aribb24.js';
 import { B62TTMLRenderer } from 'aribb62.js';
 import { Component, Prop } from 'vue-property-decorator';
-import Mmts from 'mmts.js';
-import HLSUtil from '@/util/HLSUtil';
+import createTlvDemuxModule from 'tlvdemux';
+import { MseAppendQueue } from 'tlvdemux/mse-append-queue';
 import { LiveMpegTsStreamType } from './ViedoParam';
 
 @Component({})
@@ -21,16 +20,18 @@ export default class LiveMpegTsVideo extends BaseVideo {
     @Prop({ required: true })
     public videoSrc!: string;
 
-    @Prop({ required: false, default: 'mse' })
+    @Prop({ required: false, default: 'tlv' })
     public streamType!: LiveMpegTsStreamType;
 
     @Prop({ required: false, default: true })
     public isLive!: boolean;
 
     private snackbarState: ISnackbarState = container.get<ISnackbarState>('ISnackbarState');
-    private mmtsPlayer: ReturnType<typeof Mmts.createPlayer> | null = null;
-    private captionRenderer: aribb24js.CanvasRenderer | null = null;
-    private superimposeRenderer: aribb24js.CanvasRenderer | null = null;
+    private demuxer: any = null;
+    private mediaSource: MediaSource | null = null;
+    private mediaObjectUrl: string | null = null;
+    private mediaQueues: MseAppendQueue[] = [];
+    private streamAbortController: AbortController | null = null;
     private b62Renderer: B62TTMLRenderer | null = null;
 
     public mounted(): void {
@@ -38,24 +39,14 @@ export default class LiveMpegTsVideo extends BaseVideo {
     }
 
     public async beforeDestroy(): Promise<void> {
-        if (this.mmtsPlayer !== null) {
-            this.mmtsPlayer.pause();
-            this.mmtsPlayer.unload();
-            this.mmtsPlayer.destroy();
-            this.mmtsPlayer = null;
-        }
-
-        if (this.captionRenderer !== null) {
-            this.captionRenderer.detachMedia();
-            this.captionRenderer.dispose();
-            this.captionRenderer = null;
-        }
-
-        if (this.superimposeRenderer !== null) {
-            this.superimposeRenderer.detachMedia();
-            this.superimposeRenderer.dispose();
-            this.superimposeRenderer = null;
-        }
+        this.streamAbortController?.abort();
+        this.demuxer?.delete();
+        this.demuxer = null;
+        this.mediaQueues.forEach(queue => queue.destroy());
+        this.mediaQueues = [];
+        if (this.mediaObjectUrl !== null) URL.revokeObjectURL(this.mediaObjectUrl);
+        this.mediaObjectUrl = null;
+        this.mediaSource = null;
 
         if (this.b62Renderer !== null) {
             this.b62Renderer.destroy();
@@ -69,9 +60,8 @@ export default class LiveMpegTsVideo extends BaseVideo {
      * video 再生初期設定
      */
     protected initVideoSetting(): void {
-        // 対応しているか確認
-        const featureList = Mmts.getFeatureList();
-        if (Mmts.isSupported() === false || (this.isLive === true ? featureList.mseLivePlayback : featureList.msePlayback) === false) {
+        const MediaSourceClass = window.ManagedMediaSource || window.MediaSource;
+        if (this.streamType !== 'tlv' || typeof MediaSourceClass === 'undefined') {
             this.snackbarState.open({
                 color: 'error',
                 text: '非対応ブラウザーです。',
@@ -88,66 +78,62 @@ export default class LiveMpegTsVideo extends BaseVideo {
             throw new Error('VideoIsNull');
         }
 
-        // mmts.js の設定
-        Mmts.LoggingControl.enableVerbose = true;
-        const mmtsConfig: Parameters<typeof Mmts.createPlayer>[1] = {
-            enableWorker: true,
-            liveBufferLatencyChasing: true,
-            liveBufferLatencyMinRemain: 1.0,
-            liveBufferLatencyMaxLatency: 2.0,
+        const mediaSource = new MediaSourceClass() as MediaSource;
+        this.mediaSource = mediaSource;
+        this.mediaObjectUrl = URL.createObjectURL(mediaSource);
+        this.video.src = this.mediaObjectUrl;
+        this.video.load();
+        void this.startTlvStream(mediaSource);
+    }
+
+    private async startTlvStream(mediaSource: MediaSource): Promise<void> {
+        if (mediaSource.readyState !== 'open') await new Promise<void>(resolve => mediaSource.addEventListener('sourceopen', () => resolve(), { once: true }));
+        const queues = new Map<string, MseAppendQueue>();
+        const module = await createTlvDemuxModule();
+        const appendInit = (init: any): void => {
+            if (queues.has(init.type)) return;
+            const queue = new MseAppendQueue(mediaSource, this.video!, init.mime);
+            queues.set(init.type, queue);
+            this.mediaQueues.push(queue);
+            queue.append(init.data);
         };
-        this.mmtsPlayer = Mmts.createPlayer(
-            {
-                type: this.streamType,
-                isLive: this.isLive,
-                url: this.videoSrc,
+        const demuxer = new module.TlvDemuxer({
+            mseMaxAudioChannels: 6,
+            onMseInit: appendInit,
+            onMseSegment: (segment: any) => queues.get(segment.type)?.append(segment.data),
+            onPlaybackAccessUnitView: (unit: any) => {
+                if (unit.codec === 'ttml' && this.b62Renderer !== null) {
+                    this.b62Renderer.push({
+                        packetId: 0,
+                        pts: (Number(unit.ptsValue) / unit.ptsTimescale) * 1000,
+                        dts: (Number(unit.dtsValue) / unit.dtsTimescale) * 1000,
+                        data: unit.data,
+                        len: unit.data.byteLength,
+                    });
+                }
             },
-            mmtsConfig,
-        );
-
-        this.mmtsPlayer.attachMediaElement(this.video);
-        this.mmtsPlayer.load();
-        this.mmtsPlayer.play();
-
-        if (this.streamType === 'mmts') {
-            this.initB62Renderer();
-            return;
-        }
-
-        // 字幕対応
-        const captionOption = HLSUtil.getAribb24BaseOption();
-        captionOption.data_identifer = 0x80;
-        this.captionRenderer = new aribb24js.CanvasRenderer(captionOption);
-
-        const superimposeOption = HLSUtil.getAribb24BaseOption();
-        superimposeOption.data_identifer = 0x81;
-        this.superimposeRenderer = new aribb24js.CanvasRenderer(superimposeOption);
-
-        this.captionRenderer.attachMedia(this.video);
-        this.superimposeRenderer.attachMedia(this.video);
-
-        /**
-         * 字幕スーパー用の処理
-         * 元のソースは下記参照
-         * https://twitter.com/magicxqq/status/1381813912539066373
-         * https://github.com/l3tnun/EPGStation/commit/352bf9a69fdd0848295afb91859e1a402b623212#commitcomment-50407815
-         */
-        this.mmtsPlayer.on(Mmts.Events.PES_PRIVATE_DATA_ARRIVED, (data: any) => {
-            if (data.stream_id === 0xbd && data.data[0] === 0x80 && this.captionRenderer !== null) {
-                // private_stream_1, caption
-                this.captionRenderer.pushData(data.pid, data.data, data.pts / 1000);
-            } else if (data.stream_id === 0xbf && this.superimposeRenderer !== null) {
-                // private_stream_2, superimpose
-                let payload = data.data;
-                if (payload[0] !== 0x81) {
-                    payload = this.parseMalformedPES(data.data);
-                }
-                if (payload[0] !== 0x81) {
-                    return;
-                }
-                this.superimposeRenderer.pushData(data.pid, payload, data.nearest_pts / 1000);
-            }
         });
+        this.demuxer = demuxer;
+        demuxer.setMseOutputEnabled(true);
+        demuxer.setSubtitlePassthroughEnabled(true);
+        this.initB62Renderer();
+        this.streamAbortController = new AbortController();
+        const response = await fetch(this.videoSrc, { signal: this.streamAbortController.signal });
+        if (!response.ok || response.body === null) throw new Error(`TLV stream failed: ${response.status}`);
+        const reader = response.body.getReader();
+        try {
+            while (true) {
+                const result = await reader.read();
+                if (result.done) break;
+                if (!demuxer.push(result.value)) throw new Error('TLV demux failed');
+            }
+            demuxer.flush();
+            if (mediaSource.readyState === 'open') mediaSource.endOfStream();
+        } catch (error) {
+            if ((error as DOMException).name !== 'AbortError') this.snackbarState.open({ color: 'error', text: 'TLV ストリームの再生に失敗しました。' });
+        } finally {
+            reader.releaseLock();
+        }
     }
 
     private initB62Renderer(): void {
@@ -161,33 +147,6 @@ export default class LiveMpegTsVideo extends BaseVideo {
             overlayElement: overlay,
             isLive: this.isLive,
         });
-
-        if (this.mmtsPlayer !== null) {
-            this.mmtsPlayer.on(Mmts.Events.MMTS_SUBTITLE_DATA_ARRIVED, (data: any) => {
-                if (this.b62Renderer !== null) {
-                    this.b62Renderer.push(data);
-                }
-            });
-        }
-    }
-
-    /**
-     * 字幕スーパー用の処理
-     * 元のソースは下記参照
-     * https://twitter.com/magicxqq/status/1381813912539066373
-     * https://github.com/l3tnun/EPGStation/commit/352bf9a69fdd0848295afb91859e1a402b623212#commitcomment-50407815
-     */
-    private parseMalformedPES(data: any): any {
-        let pes_scrambling_control = (data[0] & 0x30) >>> 4;
-        let pts_dts_flags = (data[1] & 0xc0) >>> 6;
-        let pes_header_data_length = data[2];
-
-        let payload_start_index = 3 + pes_header_data_length;
-        let payload_length = data.byteLength - payload_start_index;
-
-        let payload = data.subarray(payload_start_index, payload_start_index + payload_length);
-
-        return payload;
     }
 
     /**
@@ -222,14 +181,6 @@ export default class LiveMpegTsVideo extends BaseVideo {
     public showSubtitle(): void {
         super.showSubtitle();
         this.lastSubtitleState = 'showing';
-        if (this.captionRenderer !== null) {
-            this.captionRenderer.show();
-        }
-
-        if (this.superimposeRenderer !== null) {
-            this.superimposeRenderer.show();
-        }
-
         if (this.b62Renderer !== null) {
             this.setB62OverlayVisible(true);
             this.b62Renderer.startClock();
@@ -243,14 +194,6 @@ export default class LiveMpegTsVideo extends BaseVideo {
     public disabledSubtitle(): void {
         super.disabledSubtitle();
         this.lastSubtitleState = 'disabled';
-
-        if (this.captionRenderer !== null) {
-            this.captionRenderer.hide();
-        }
-
-        if (this.superimposeRenderer !== null) {
-            this.superimposeRenderer.hide();
-        }
 
         if (this.b62Renderer !== null) {
             this.setB62OverlayVisible(false);
@@ -270,7 +213,7 @@ export default class LiveMpegTsVideo extends BaseVideo {
      * @return boolean true で有効
      */
     public isEnabledSubtitles(): boolean {
-        return this.captionRenderer !== null || this.superimposeRenderer !== null || this.b62Renderer !== null || super.isEnabledSubtitles();
+        return this.b62Renderer !== null || super.isEnabledSubtitles();
     }
 
     /**

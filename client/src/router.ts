@@ -1,6 +1,5 @@
 import Vue from 'vue';
-import Router from 'vue-router';
-import { Position, Route } from 'vue-router/types/router';
+import Router, { Route } from 'vue-router';
 import container from './model/ModelContainer';
 import IScrollPositionState from './model/state/IScrollPositionState';
 import Dashboard from './views/Dashboard.vue';
@@ -21,6 +20,11 @@ import Storages from './views/Storages.vue';
 import WatchOnAir from './views/WatchOnAir.vue';
 import WatchRecorded from './views/WatchRecorded.vue';
 import WatchRecordedStreaming from './views/WatchRecordedStreaming.vue';
+
+interface Position {
+    x: number;
+    y: number;
+}
 
 Vue.use(Router);
 

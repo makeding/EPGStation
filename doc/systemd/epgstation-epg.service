@@ -1,0 +1,13 @@
+[Unit]
+Description=EPGStation EPG updater
+After=network-online.target epgstation.service
+
+[Service]
+Type=simple
+User=epgstation
+WorkingDirectory=/opt/EPGStation
+ExecStart=/usr/bin/npm run epg:watch
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

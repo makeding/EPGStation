@@ -62,8 +62,8 @@ class MobilePagination extends Vue {
             this.currentPage <= MobilePagination.PAGINATION_CENTER - 1
                 ? 1
                 : maxPage - this.currentPage >= MobilePagination.PAGINATION_CENTER - 1
-                ? this.currentPage - (MobilePagination.PAGINATION_CENTER - 1)
-                : maxPage - MobilePagination.PAGINATION_MAX_SIZE + 1;
+                  ? this.currentPage - (MobilePagination.PAGINATION_CENTER - 1)
+                  : maxPage - MobilePagination.PAGINATION_MAX_SIZE + 1;
         if (startPage <= 0) {
             startPage = 1;
         }

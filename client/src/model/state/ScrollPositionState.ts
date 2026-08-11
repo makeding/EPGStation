@@ -39,13 +39,43 @@ class ScrollPositionState implements IScrollPositionState {
      * sessionStorage に history を保存
      */
     private saveStorage(): void {
-        window.sessionStorage.setItem(
-            ScrollPositionState.STORAGE_KEY,
-            JSON.stringify({
-                history: this.history,
-                curentPosition: this.currentPosition,
-            }),
-        );
+        if (this.history === null) {
+            return;
+        }
+
+        if (this.history.length > ScrollPositionState.MAX_HISTORY_LENGTH) {
+            const removedCount = this.history.length - ScrollPositionState.MAX_HISTORY_LENGTH;
+            this.history = this.history.slice(removedCount);
+            this.currentPosition -= removedCount;
+        }
+
+        const save = (): void => {
+            window.sessionStorage.setItem(
+                ScrollPositionState.STORAGE_KEY,
+                JSON.stringify({
+                    history: this.history,
+                    currentPosition: this.currentPosition,
+                }),
+            );
+        };
+
+        try {
+            save();
+        } catch (err) {
+            console.error('history storage save error');
+            for (const history of this.history) {
+                history.data = null;
+            }
+            try {
+                save();
+            } catch (_retryError) {
+                try {
+                    window.sessionStorage.removeItem(ScrollPositionState.STORAGE_KEY);
+                } catch (_removeError) {
+                    // sessionStorage is unavailable.
+                }
+            }
+        }
     }
 
     /**
@@ -85,7 +115,7 @@ class ScrollPositionState implements IScrollPositionState {
         if (newPosition === -1) {
             this.currentPosition += 1;
             if (typeof this.history[this.currentPosition] !== 'undefined') {
-                this.history = this.history.splice(0, this.currentPosition);
+                this.history = this.history.slice(0, this.currentPosition);
             }
 
             this.history.push({
@@ -105,17 +135,42 @@ class ScrollPositionState implements IScrollPositionState {
      * history を復元
      */
     private restoreHistory(): void {
-        const str = window.sessionStorage.getItem(ScrollPositionState.STORAGE_KEY);
+        let str: string | null = null;
+        try {
+            str = window.sessionStorage.getItem(ScrollPositionState.STORAGE_KEY);
+        } catch (_err) {
+            // sessionStorage is unavailable.
+        }
         if (str === null) {
-            this.history = [];
-            this.currentPosition = -1;
-
+            this.resetHistory();
             return;
         }
 
-        const data = JSON.parse(str) as any;
-        this.history = data.history;
-        this.currentPosition = data.position;
+        try {
+            const data = JSON.parse(str) as any;
+            if (Array.isArray(data.history) === false) {
+                throw new Error('HistoryIsInvalid');
+            }
+
+            const history: History[] = data.history.slice(-ScrollPositionState.MAX_HISTORY_LENGTH);
+            this.history = history;
+            const savedPosition = data.currentPosition ?? data.curentPosition ?? data.position;
+            const removedCount = data.history.length - history.length;
+            this.currentPosition = Number.isInteger(savedPosition) ? Math.min(Math.max(savedPosition - removedCount, -1), history.length - 1) : history.length - 1;
+        } catch (err) {
+            console.error('history storage restore error');
+            this.resetHistory();
+            try {
+                window.sessionStorage.removeItem(ScrollPositionState.STORAGE_KEY);
+            } catch (_removeError) {
+                // sessionStorage is unavailable.
+            }
+        }
+    }
+
+    private resetHistory(): void {
+        this.history = [];
+        this.currentPosition = -1;
     }
 
     /**
@@ -162,6 +217,7 @@ namespace ScrollPositionState {
     export const STORAGE_KEY = 'historyInfo';
     export const TIMESTAMP_PARAM = 'timestamp';
     export const DONE_GET_DATA_EVENT = 'doneGetData';
+    export const MAX_HISTORY_LENGTH = 50;
 }
 
 export default ScrollPositionState;

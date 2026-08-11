@@ -1,4 +1,4 @@
-import * as aribb24js from 'aribb24.js';
+import { CanvasMainThreadRenderer, Controller, HLSFeeder } from 'aribb24.js';
 import Hls from 'hls.js';
 import { injectable } from 'inversify';
 import HLSUtil from '../../../../util/HLSUtil';
@@ -6,7 +6,15 @@ import IB24RenderState from './IB24RenderState';
 
 @injectable()
 export default class B24RenderState implements IB24RenderState {
-    private b24Renderer: aribb24js.CanvasRenderer | null = null;
+    private controller: Controller | null = null;
+    private feeder: HLSFeeder | null = null;
+    private renderer: CanvasMainThreadRenderer | null = null;
+    private hls: Hls | null = null;
+    private readonly onMetadata = (_event: string, data: any): void => {
+        for (const sample of data.samples) {
+            this.feeder?.feedID3(sample.data, sample.pts, sample.dts);
+        }
+    };
 
     /**
      * set b24 subtitle render
@@ -16,16 +24,20 @@ export default class B24RenderState implements IB24RenderState {
     public init(video: HTMLVideoElement, hls?: Hls): void {
         this.destroy();
 
-        const b24Option = HLSUtil.getAribb24BaseOption();
-        this.b24Renderer = new aribb24js.CanvasRenderer(b24Option);
-        this.b24Renderer.attachMedia(video);
+        this.controller = new Controller();
+        this.feeder = new HLSFeeder({
+            recieve: {},
+            tokenizer: {},
+            offset: {},
+        });
+        this.renderer = new CanvasMainThreadRenderer(HLSUtil.getAribb24RendererOption());
+        this.controller.attachFeeder(this.feeder);
+        this.controller.attachRenderer(this.renderer);
+        this.controller.attachMedia(video);
 
         if (typeof hls !== 'undefined') {
-            hls.on(Hls.Events.FRAG_PARSING_METADATA, (_e, data) => {
-                for (const sample of data.samples) {
-                    this.b24Renderer?.pushID3v2Data(sample.pts, sample.data);
-                }
-            });
+            this.hls = hls;
+            hls.on(Hls.Events.FRAG_PARSING_METADATA, this.onMetadata);
         }
     }
 
@@ -33,13 +45,22 @@ export default class B24RenderState implements IB24RenderState {
      * destory b24 subtitle render
      */
     public destroy(): void {
-        if (this.b24Renderer === null) {
+        if (this.controller === null || this.feeder === null || this.renderer === null) {
             return;
         }
 
-        this.b24Renderer.detachMedia();
-        this.b24Renderer.dispose();
-        this.b24Renderer = null;
+        if (this.hls !== null) {
+            this.hls.off(Hls.Events.FRAG_PARSING_METADATA, this.onMetadata);
+            this.hls = null;
+        }
+        this.controller.detachMedia();
+        this.controller.detachFeeder();
+        this.controller.detachRenderer(this.renderer);
+        this.feeder.destroy();
+        this.renderer.destroy();
+        this.controller = null;
+        this.feeder = null;
+        this.renderer = null;
     }
 
     /**
@@ -47,24 +68,20 @@ export default class B24RenderState implements IB24RenderState {
      * @return boolean true で初期化済み
      */
     public isInited(): boolean {
-        return this.b24Renderer !== null;
+        return this.controller !== null;
     }
 
     /**
      * 字幕を表示させる
      */
     public showSubtitle(): void {
-        if (this.b24Renderer !== null) {
-            this.b24Renderer.show();
-        }
+        this.controller?.show();
     }
 
     /**
      * 字幕を非表示にする
      */
     public disabledSubtitle(): void {
-        if (this.b24Renderer !== null) {
-            this.b24Renderer.hide();
-        }
+        this.controller?.hide();
     }
 }

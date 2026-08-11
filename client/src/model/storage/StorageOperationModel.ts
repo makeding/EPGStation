@@ -7,7 +7,7 @@ import IStorageOperationModel from './IStorageOperationModel';
  */
 @injectable()
 export default class StorageOperationModel implements IStorageOperationModel {
-    private dummySavedValue: any | null = null;
+    private dummySavedValues: Map<string, any> = new Map();
 
     /**
      * 値のセット
@@ -15,11 +15,13 @@ export default class StorageOperationModel implements IStorageOperationModel {
      * @param value: 保存する値
      */
     public set(key: string, value: any): void {
+        const serialized = JSON.stringify(value);
         try {
-            window.localStorage.setItem(key, JSON.stringify(value));
+            window.localStorage.setItem(key, serialized);
+            this.dummySavedValues.delete(key);
         } catch (err) {
             console.error('local storage save error');
-            this.dummySavedValue = JSON.parse(JSON.stringify(value));
+            this.dummySavedValues.set(key, JSON.parse(serialized));
         }
     }
 
@@ -33,10 +35,20 @@ export default class StorageOperationModel implements IStorageOperationModel {
         try {
             value = window.localStorage.getItem(key);
         } catch (err) {
-            return this.dummySavedValue;
+            return this.dummySavedValues.get(key) ?? null;
         }
 
-        return value === null ? null : JSON.parse(value);
+        if (value === null) {
+            return this.dummySavedValues.get(key) ?? null;
+        }
+
+        try {
+            return JSON.parse(value);
+        } catch (err) {
+            console.error(`local storage parse error: ${key}`);
+            this.remove(key);
+            return null;
+        }
     }
 
     /**
@@ -44,6 +56,11 @@ export default class StorageOperationModel implements IStorageOperationModel {
      * @param key: string key
      */
     public remove(key: string): void {
-        window.localStorage.removeItem(key);
+        this.dummySavedValues.delete(key);
+        try {
+            window.localStorage.removeItem(key);
+        } catch (err) {
+            console.error(`local storage remove error: ${key}`);
+        }
     }
 }

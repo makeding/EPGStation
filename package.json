@@ -6,6 +6,8 @@
     "scripts": {
         "all-install": "npm i --no-save && cd client && npm i --no-save",
         "start": "node dist/index.js",
+        "epg:watch": "node dist/model/epgUpdater/EPGUpdateExecutor.js",
+        "epg:update": "node dist/model/epgUpdater/EPGUpdateExecutor.js --once",
         "build": "npm run build-server && npm run build-client",
         "build-win": "npm run build-server && npm run build-client-win",
         "build-server": "npm run lint && npm run format && npm run compile",

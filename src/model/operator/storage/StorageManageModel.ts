@@ -5,10 +5,11 @@ import Recorded from '../../../db/entities/Recorded';
 import ProcessUtil from '../../../util/ProcessUtil';
 import Util from '../../../util/Util';
 import IRecordedDB from '../../db/IRecordedDB';
-import IConfigFile, { RecordedDirInfo } from '../../IConfigFile';
+import IConfigFile, { RecordedDirInfo, StorageWarningLevel } from '../../IConfigFile';
 import IConfiguration from '../../IConfiguration';
 import ILogger from '../../ILogger';
 import ILoggerModel from '../../ILoggerModel';
+import INotificationManageModel from '../notification/INotificationManageModel';
 import IRecordedManageModel from '../recorded/IRecordedManageModel';
 import IStorageManageModel from './IStorageManageModel';
 
@@ -18,20 +19,24 @@ export default class StorageManageModel implements IStorageManageModel {
     private config: IConfigFile;
     private recordedManage: IRecordedManageModel;
     private recordedDB: IRecordedDB;
+    private notificationManage: INotificationManageModel;
 
     private isRunning: boolean = false;
     private timerId: NodeJS.Timeout | null = null;
+    private warningLevels: Map<string, StorageWarningLevel | null> = new Map();
 
     constructor(
         @inject('ILoggerModel') logger: ILoggerModel,
         @inject('IConfiguration') configuration: IConfiguration,
         @inject('IRecordedManageModel') recordedManage: IRecordedManageModel,
         @inject('IRecordedDB') recordedDB: IRecordedDB,
+        @inject('INotificationManageModel') notificationManage: INotificationManageModel,
     ) {
         this.log = logger.getLogger();
         this.config = configuration.getConfig();
         this.recordedManage = recordedManage;
         this.recordedDB = recordedDB;
+        this.notificationManage = notificationManage;
     }
 
     /**
@@ -40,7 +45,11 @@ export default class StorageManageModel implements IStorageManageModel {
     public start(): void {
         const checkList: RecordedDirInfo[] = [];
         for (const r of this.config.recorded) {
-            if (typeof r.limitThreshold !== 'undefined') {
+            if (
+                typeof r.warningThreshold !== 'undefined' ||
+                typeof r.criticalThreshold !== 'undefined' ||
+                typeof r.limitThreshold !== 'undefined'
+            ) {
                 checkList.push(r);
             }
         }
@@ -50,13 +59,16 @@ export default class StorageManageModel implements IStorageManageModel {
             return;
         }
 
-        this.timerId = setInterval(async () => {
+        const runCheck = async (): Promise<void> => {
             await this.check(checkList).catch(err => {
                 this.isRunning = false;
                 this.log.system.error('disk check error');
                 this.log.system.error(err);
             });
-        }, this.config.storageLimitCheckIntervalTime * 1000);
+        };
+
+        void runCheck();
+        this.timerId = setInterval(runCheck, this.config.storageLimitCheckIntervalTime * 1000);
     }
 
     /**
@@ -70,10 +82,6 @@ export default class StorageManageModel implements IStorageManageModel {
         this.isRunning = true;
 
         for (const l of list) {
-            if (typeof l.limitThreshold === 'undefined') {
-                continue;
-            }
-
             let free: number;
             try {
                 free = await this.getFreeSize(l.path);
@@ -84,6 +92,12 @@ export default class StorageManageModel implements IStorageManageModel {
                 continue;
             }
             free = free / 1024 / 1024; // MB に換算
+
+            this.updateStorageWarning(l, free);
+
+            if (typeof l.limitThreshold === 'undefined') {
+                continue;
+            }
 
             // 空き容量が閾値を超えたか
             if (free > l.limitThreshold) {
@@ -136,7 +150,7 @@ export default class StorageManageModel implements IStorageManageModel {
 
                     // 空き容量取得
                     try {
-                        free = await this.getFreeSize(l.path);
+                        free = (await this.getFreeSize(l.path)) / 1024 / 1024;
                     } catch (err: any) {
                         this.log.system.error(`get disk info error: ${l.path}`);
                         this.log.system.error(err);
@@ -166,6 +180,57 @@ export default class StorageManageModel implements IStorageManageModel {
                 }
             });
         });
+    }
+
+    private updateStorageWarning(recordedDir: RecordedDirInfo, free: number): void {
+        const current = this.getStorageWarning(recordedDir, free);
+        const previous = this.warningLevels.get(recordedDir.path) ?? null;
+        this.warningLevels.set(recordedDir.path, current?.level ?? null);
+
+        if (current === null || this.getWarningSeverity(current.level) <= this.getWarningSeverity(previous)) {
+            return;
+        }
+
+        this.log.system.warn(
+            `storage warning: name=${recordedDir.name}, level=${current.level}, free=${free}MB, threshold=${current.threshold}MB`,
+        );
+        this.notificationManage.addStorageWarning({
+            level: current.level,
+            name: recordedDir.name,
+            path: recordedDir.path,
+            free,
+            threshold: current.threshold,
+        });
+    }
+
+    private getStorageWarning(
+        recordedDir: RecordedDirInfo,
+        free: number,
+    ): { level: StorageWarningLevel; threshold: number } | null {
+        if (typeof recordedDir.limitThreshold !== 'undefined' && free <= recordedDir.limitThreshold) {
+            return { level: 'limit', threshold: recordedDir.limitThreshold };
+        }
+        if (typeof recordedDir.criticalThreshold !== 'undefined' && free <= recordedDir.criticalThreshold) {
+            return { level: 'critical', threshold: recordedDir.criticalThreshold };
+        }
+        if (typeof recordedDir.warningThreshold !== 'undefined' && free <= recordedDir.warningThreshold) {
+            return { level: 'warning', threshold: recordedDir.warningThreshold };
+        }
+
+        return null;
+    }
+
+    private getWarningSeverity(level: StorageWarningLevel | null): number {
+        switch (level) {
+            case 'warning':
+                return 1;
+            case 'critical':
+                return 2;
+            case 'limit':
+                return 3;
+            default:
+                return 0;
+        }
     }
 
     /**

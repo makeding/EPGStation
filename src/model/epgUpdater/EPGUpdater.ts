@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { inject, injectable } from 'inversify';
 import IConfigFile from '../IConfigFile';
 import IConfiguration from '../IConfiguration';
@@ -44,7 +45,7 @@ class EPGUpdater implements IEPGUpdater {
             this.retryCount = 0;
             try {
                 await this.updateManage.updateAll();
-                this.notify();
+                this.notify().catch(err => this.logNotifyError(err));
             } catch (err: any) {
                 this.log.system.error('updateAll error');
             }
@@ -96,7 +97,7 @@ class EPGUpdater implements IEPGUpdater {
                     this.lastUpdatedTime = now;
                     // updateAll 後は全件数削除が行われるため削除時間も更新する
                     this.lastDeletedTime = now;
-                    this.notify();
+                    this.notify().catch(err => this.logNotifyError(err));
                 }
             } catch (err: any) {
                 this.log.system.error('EPG update error');
@@ -112,6 +113,14 @@ class EPGUpdater implements IEPGUpdater {
                 this.lastDeletedTime = now;
             }
         }, 10 * 1000);
+    }
+
+    public async updateOnce(): Promise<void> {
+        this.log.system.info('start one-shot EPG update');
+        await this.updateManage.updateAll();
+        await this.updateManage.deleteOldPrograms();
+        await this.notify();
+        this.log.system.info('finish one-shot EPG update');
     }
 
     /**
@@ -161,7 +170,7 @@ class EPGUpdater implements IEPGUpdater {
             this.lastUpdatedTime = now;
 
             // NOTE this.config.epgUpdateIntervalTime の周期で予約情報を更新させるため追加
-            this.notify();
+            this.notify().catch(err => this.logNotifyError(err));
         }
     }
 
@@ -186,17 +195,29 @@ class EPGUpdater implements IEPGUpdater {
             this.lastUpdatedTime = now;
 
             // NOTE this.config.epgUpdateIntervalTime の周期で予約情報を更新させるため追加
-            this.notify();
+            this.notify().catch(err => this.logNotifyError(err));
         }
     }
 
     /**
      * 親プロセスへ更新が完了したことを知らせる
      */
-    private notify(): void {
+    private async notify(): Promise<void> {
         if (typeof process.send !== 'undefined') {
             process.send({ msg: 'updated' });
+            return;
         }
+
+        if (typeof this.config.epgUpdateNotifyUrl === 'undefined') {
+            throw new Error('EpgUpdateNotifyUrlIsUndefined');
+        }
+
+        await axios.post(this.config.epgUpdateNotifyUrl, undefined, { timeout: 30000 });
+    }
+
+    private logNotifyError(err: any): void {
+        this.log.system.error('EPG update notification failed');
+        this.log.system.error(err);
     }
 }
 

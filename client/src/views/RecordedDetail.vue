@@ -201,7 +201,7 @@ export default class RecordedDetail extends Vue {
             return;
         }
 
-        const streamType = video.filename.endsWith('.mmts') || video.relativeFilePath.endsWith('.mmts') ? 'mmts' : 'mse';
+        const streamType = video.filename.endsWith('.mmts') || video.relativeFilePath.endsWith('.mmts') ? 'tlv' : undefined;
         Util.move(this.$router, {
             path: `/recorded/streaming/${video.id}`,
             query: {

@@ -107,6 +107,13 @@ class Configuration implements IConfiguration {
             newConfig.recordedBS4KFormat = 'm2ts';
         }
 
+        if (newConfig.epgUpdaterMode !== 'fork' && newConfig.epgUpdaterMode !== 'external') {
+            throw new Error('EpgUpdaterModeConfigError');
+        }
+        if (newConfig.epgUpdaterMode === 'external' && typeof newConfig.epgUpdateNotifyUrl === 'undefined') {
+            throw new Error('EpgUpdateNotifyUrlConfigError');
+        }
+
         if (typeof newConfig.realtimeEncode !== 'undefined') {
             const realtimeEncode = newConfig.realtimeEncode;
             if (
@@ -310,6 +317,7 @@ namespace Configuration {
         dbtype: 'sqlite',
         needToReplaceEnclosingCharacters: true,
         epgUpdateIntervalTime: 10,
+        epgUpdaterMode: 'fork',
         conflictPriority: 1,
         recPriority: 2,
         streamingPriority: 0,

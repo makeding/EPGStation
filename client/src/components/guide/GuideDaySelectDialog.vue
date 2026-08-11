@@ -4,7 +4,7 @@
             <v-card class="py-2">
                 <v-list-item v-for="item in dayItems" :key="item.value" v-on:click="goto(item.value)" :disabled="item.disabled">
                     <v-list-item-content>
-                        <v-list-item-title v-text="item.text" style="text-align: center"></v-list-item-title>
+                        <v-list-item-title style="text-align: center">{{ item.text }}</v-list-item-title>
                     </v-list-item-content>
                 </v-list-item>
             </v-card>

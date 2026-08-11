@@ -24,6 +24,9 @@ apiServers:
     - http://192.168.2.110:8888
 
 epgUpdateIntervalTime: 10
+epgUpdaterMode: fork
+# external の場合は、EPG 更新後に予約を再計算させる内部 API を指定する
+# epgUpdateNotifyUrl: http://127.0.0.1:8888/api/reserves/update
 
 conflictPriority: 1
 recPriority: 2
@@ -33,11 +36,15 @@ recordedFormat: '%YEAR%年%MONTH%月%DAY%日%HOUR%時%MIN%分%SEC%秒-%HALF_WIDT
 recordedFileExtension: .m2ts
 # BS4K recording format:
 #   m2ts: request Mirakurun decode/remux and save .m2ts
-#   mmts: request decode=0 and save raw .mmts
+#   mmts: request decode=0 and save raw .mmts for tlvdemux
 recordedBS4KFormat: mmts
 recorded:
     - name: recorded
       path: '%ROOT%/recorded'
+      # warningThreshold: 51200   # 50 GiB
+      # criticalThreshold: 10240  # 10 GiB
+      # limitThreshold: 1024      # 最終警告 (1 GiB)
+      # action: none
 
 thumbnail: '%ROOT%/thumbnail'
 thumbnailSize: 480x270

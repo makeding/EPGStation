@@ -337,7 +337,6 @@ import ISnackbarState from '@/model/state/snackbar/ISnackbarState';
 import { ISettingStorageModel, GuideViewMode } from '@/model/storage/setting/ISettingStorageModel';
 import { Component, Vue, Watch } from 'vue-property-decorator';
 import IColorThemeState from '@/model/state/IColorThemeState';
-import Mmts from 'mmts.js';
 
 Component.registerHooks(['beforeRouteUpdate', 'beforeRouteLeave']);
 
@@ -408,7 +407,8 @@ export default class Settings extends Vue {
     }
 
     get isSupportedMpegts(): boolean {
-        return Mmts.isSupported();
+        const mediaSource = window.ManagedMediaSource || window.MediaSource;
+        return typeof mediaSource !== 'undefined' && mediaSource.isTypeSupported('video/mp4; codecs="hvc1.1.6.L153.B0"');
     }
 
     constructor() {

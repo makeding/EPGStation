@@ -9,6 +9,7 @@ import IConfigFile, {
     NotificationTelegramConfig,
     NotificationTrigger,
     NotificationWebhookConfig,
+    StorageWarning,
 } from '../../IConfigFile';
 import IConfiguration from '../../IConfiguration';
 import ILogger from '../../ILogger';
@@ -21,7 +22,8 @@ type TemplateValue = string | number | boolean | null;
 interface NotificationContext {
     event: NotificationEvent;
     values: { [key: string]: TemplateValue };
-    payload: {
+    payload:
+        | {
         event: NotificationEvent;
         recorded: {
             id: number;
@@ -57,7 +59,17 @@ interface NotificationContext {
             type: string;
             size: number;
         } | null;
-    };
+          }
+        | {
+              event: 'storageWarning';
+              storage: {
+                  level: string;
+                  name: string;
+                  path: string;
+                  free: number;
+                  threshold: number;
+              };
+          };
 }
 
 @injectable()
@@ -94,6 +106,19 @@ export default class NotificationManageModel implements INotificationManageModel
         this.addRecorded('recordingFailed', recorded);
     }
 
+    public addStorageWarning(warning: StorageWarning): void {
+        if (this.isEnabled('storageWarning') === false) {
+            return;
+        }
+
+        this.queue.add<void>(() => {
+            return this.send(this.createStorageContext(warning)).catch(err => {
+                this.log.system.error('notification error: storageWarning');
+                this.log.system.error(err);
+            });
+        });
+    }
+
     private addRecorded(event: NotificationEvent, recorded: Recorded): void {
         if (this.isEnabled(event) === false) {
             return;
@@ -124,11 +149,15 @@ export default class NotificationManageModel implements INotificationManageModel
 
     private async notify(event: NotificationEvent, recorded: Recorded): Promise<void> {
         const context = await this.createContext(event, recorded);
+        await this.send(context);
+    }
+
+    private async send(context: NotificationContext): Promise<void> {
         const tasks: Promise<void>[] = [];
 
         if (typeof this.config.notification?.telegram !== 'undefined') {
             for (const telegram of this.config.notification.telegram) {
-                if (this.matchTrigger(telegram.trigger, event)) {
+                if (this.matchTrigger(telegram.trigger, context.event)) {
                     tasks.push(this.sendTelegram(telegram, context));
                 }
             }
@@ -136,13 +165,37 @@ export default class NotificationManageModel implements INotificationManageModel
 
         if (typeof this.config.notification?.webhooks !== 'undefined') {
             for (const webhook of this.config.notification.webhooks) {
-                if (this.matchTrigger(webhook.trigger, event)) {
+                if (this.matchTrigger(webhook.trigger, context.event)) {
                     tasks.push(this.sendWebhook(webhook, context));
                 }
             }
         }
 
         await Promise.all(tasks);
+    }
+
+    private createStorageContext(warning: StorageWarning): NotificationContext {
+        return {
+            event: 'storageWarning',
+            values: {
+                EVENT: 'storageWarning',
+                STORAGE_LEVEL: warning.level,
+                STORAGE_NAME: warning.name,
+                STORAGE_PATH: warning.path,
+                STORAGE_FREE: warning.free,
+                STORAGE_THRESHOLD: warning.threshold,
+                event: 'storageWarning',
+                storageLevel: warning.level,
+                storageName: warning.name,
+                storagePath: warning.path,
+                storageFree: warning.free,
+                storageThreshold: warning.threshold,
+            },
+            payload: {
+                event: 'storageWarning',
+                storage: warning,
+            },
+        };
     }
 
     private matchTrigger(trigger: NotificationTrigger, event: NotificationEvent): boolean {
@@ -438,6 +491,19 @@ export default class NotificationManageModel implements INotificationManageModel
 
     private createDefaultMessage(context: NotificationContext): string {
         const title = this.createDefaultTitle(context.event);
+        if (context.event === 'storageWarning') {
+            const free = context.values.storageFree;
+            const threshold = context.values.storageThreshold;
+            return [
+                title,
+                `レベル: ${context.values.storageLevel}`,
+                `ストレージ: ${context.values.storageName}`,
+                `パス: ${context.values.storagePath}`,
+                `空き容量: ${typeof free === 'number' ? (free / 1024).toFixed(1) : ''} GiB`,
+                `閾値: ${typeof threshold === 'number' ? (threshold / 1024).toFixed(1) : ''} GiB`,
+            ].join('\n');
+        }
+
         const name = context.values.name;
         const channelName = context.values.channelName;
         const startAt = context.values.startAt;
@@ -478,6 +544,8 @@ export default class NotificationManageModel implements INotificationManageModel
                 return '録画に失敗しました';
             case 'recordingFinish':
                 return '録画が完了しました';
+            case 'storageWarning':
+                return 'ストレージの空き容量が低下しました';
         }
     }
 

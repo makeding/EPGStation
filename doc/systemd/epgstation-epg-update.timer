@@ -1,0 +1,11 @@
+[Unit]
+Description=Update EPGStation EPG periodically
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=10min
+Persistent=true
+Unit=epgstation-epg-update.service
+
+[Install]
+WantedBy=timers.target

@@ -72,8 +72,8 @@ export default class WatchOnAir extends Vue {
                     };
                 } else if (this.watchParam.type === 'm2tsll') {
                     const channel = this.channelModel.findChannel(this.watchParam.channel, this.settingModel.getSavedValue().isHalfWidthDisplayed);
-                    const streamType = channel !== null && channel.channelType === 'BS4K' ? 'mmts' : 'mse';
-                    const decodeParam = streamType === 'mmts' ? '&decode=0' : '';
+                    const streamType = 'tlv';
+                    const decodeParam = '&decode=0';
                     (this.videoParam as LiveMpegTsVideoParam) = {
                         type: 'LiveMpegTs',
                         src: `${window.location.origin}${Util.getSubDirectory()}/api/streams/live/${this.watchParam.channel}/m2tsll?mode=${this.watchParam.mode}${decodeParam}`,

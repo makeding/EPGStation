@@ -23,7 +23,13 @@ const updater = container.get<IEPGUpdater>('IEPGUpdater');
 (async () => {
     // 初回更新 or event stream 更新時にエラーが発生する
     log.system.debug('start EPGUpdateExecutor.js');
-    await updater.start().catch(() => {
+    const isOnce = process.argv.includes('--once');
+    const run = isOnce ? updater.updateOnce() : updater.start();
+    await run.catch(err => {
+        log.system.fatal(err);
         process.exit(1);
     });
+    if (isOnce === true) {
+        process.exit(0);
+    }
 })();

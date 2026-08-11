@@ -1,4 +1,5 @@
 import Hls from 'hls.js';
+import { PartialCanvasRendererOption } from 'aribb24.js';
 import container from '../model/ModelContainer';
 import { ISettingStorageModel } from '../model/storage/setting/ISettingStorageModel';
 import UaUtil from './UaUtil';
@@ -15,7 +16,7 @@ namespace HLSUtil {
     /**
      * aribb24.js の option を生成する
      */
-    export const getAribb24BaseOption = (): any => {
+    export const getAribb24RendererOption = (): PartialCanvasRendererOption => {
         const storageModel: ISettingStorageModel = container.get<ISettingStorageModel>('ISettingStorageModel');
         const config = storageModel.getSavedValue();
 
@@ -25,17 +26,19 @@ namespace HLSUtil {
                 ? '"Windows TV MaruGothic", "MS Gothic", "Yu Gothic", sans-serif'
                 : '"Windows TV MaruGothic", "Hiragino Maru Gothic Pro", "HGMaruGothicMPRO", "Yu Gothic Medium", sans-serif';
 
-        const baseOption: any = {
-            normalFont: font,
-            gaijiFont: font,
-            drcsReplacement: true,
-            enableAutoInBandMetadataTextTrackDetection: HLSUtil.isSupportedHLSjs() === false,
+        const option: PartialCanvasRendererOption = {
+            font: {
+                normal: font,
+                arib: font,
+            },
         };
         if (config.isForceEnableSubtitleStroke === true) {
-            baseOption.forceStrokeColor = 'black';
+            option.color = {
+                stroke: 'black',
+            };
         }
 
-        return baseOption;
+        return option;
     };
 }
 

@@ -63,7 +63,7 @@ export const get: Operation = async (req, res) => {
 };
 
 get.apiDoc = {
-    summary: 'ライブ M2TS Low Latency (mmts.js 用) ストリーム',
+    summary: 'ライブ M2TS Low Latency (tlvdemux 用) ストリーム',
     tags: ['streams'],
     description: 'ライブ M2TS Low Latency ストリームを取得する',
     parameters: [

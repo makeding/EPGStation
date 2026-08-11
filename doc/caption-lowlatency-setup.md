@@ -32,7 +32,7 @@ iOS 及び iPadOS(PWA モード時のみ) でフルスクリーン再生した�
 
 `config.yml` にて stream/live/ts/m2tsll に FFmpeg パラメータを正しく入れる必要があります。
 
-なお、mmts.js による低遅延視聴機能は iPadOS に対応しますが、iOS は非対応です。
+なお、tlvdemux による低遅延視聴機能は iPadOS に対応しますが、iOS は非対応です。
 
 ### 字幕/文字スーパーの抽出
 

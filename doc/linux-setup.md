@@ -85,6 +85,17 @@
     $ pm2 delete epgstation
     ```
 
+### EPG updater を別プロセスで実行する
+
+`config.yml` で `epgUpdaterMode: external` と `epgUpdateNotifyUrl` を設定すると、EPGStation 本体は updater を fork しません。
+
+-   常駐 service: `npm run epg:watch`
+-   systemd timer からの一回更新: `npm run epg:update`
+
+一回更新用の service/timer 例は `doc/systemd/epgstation-epg-update.service` と `doc/systemd/epgstation-epg-update.timer` にあります。常駐方式と timer 方式は同時に有効化しないでください。
+
+常駐 service の例は `doc/systemd/epgstation-epg.service` です。各 unit の `User`, `WorkingDirectory`, `ExecStart` は実際の配置先に合わせて変更してください。
+
 ## MySQL 使用時の注意
 
 EPGStation 使用中は MySQL のバイナリログが大量に生成されてディスクを圧迫するので、MySQL の設定を変えることを推奨します

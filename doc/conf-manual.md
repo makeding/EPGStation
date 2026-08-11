@@ -515,7 +515,9 @@ recorded:
 | -------------- | ------------------ | ---- | ----------------------------------------------------------------------------- |
 | name           | string             | yes  | Web インターフェイス上で表示される名前                                        |
 | path           | string             | yes  | 保存先ディレクトリパス (フルパスで指定すること)                               |
-| limitThreshold | number             | no   | 空き容量限界閾値 (単位 MB)。これを超えると action, limit で指定した動作を行う |
+| warningThreshold | number           | no   | 空き容量警告閾値 (単位 MB)。下回ると `warning` 通知                            |
+| criticalThreshold | number          | no   | 空き容量重大警告閾値 (単位 MB)。下回ると `critical` 通知                       |
+| limitThreshold | number             | no   | 空き容量限界閾値 (単位 MB)。下回ると `limit` 通知と指定した動作を行う         |
 | action         | 'remove' \| 'none' | no   | 下記の limitThreshold 説明を参照                                              |
 | limitCmd       | string             | no   | limitThreshold を超えた時に実行するコマンド                                   |
 
@@ -818,7 +820,7 @@ encodingFinishCommand: '/bin/node /home/hoge/fuga.js finish'
 
 ### notification
 
--   録画開始、録画完了、録画失敗時に Telegram / Webhook へ通知する設定
+-   録画開始、録画完了、録画失敗、ストレージ容量警告時に Telegram / Webhook へ通知する設定
 -   Telegram / Webhook の各項目に `trigger` を指定する
 
 | 子プロパティ名 | 種類   | 必須 | 説明                                        |
@@ -872,6 +874,11 @@ notification:
           botToken: '123456789:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
           chatId: '123456789'
           messageTemplate: '録画を開始しました: {{name}}'
+        - name: storage-message
+          trigger: storageWarning
+          botToken: '123456789:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+          chatId: '123456789'
+          messageTemplate: '{{storageLevel}}: {{storageName}} の空き容量 {{storageFree}} MB'
     webhooks:
         - name: simple-json
           trigger: recordingFinish
@@ -895,17 +902,23 @@ notification:
           bodyTemplate: 'recording finished: %NAME% (%CHANNELNAME%)'
 ```
 
--   `trigger` は `recordingStart`, `recordingFinish`, `recordingFailed` のいずれか、または配列で指定する
+-   `trigger` は `recordingStart`, `recordingFinish`, `recordingFailed`, `storageWarning` のいずれか、または配列で指定する
 
 -   `{{name}}` と `%NAME%` のどちらの形式でもテンプレート展開できる
 -   `json` の値全体が `{{recordedId}}` のような単一プレースホルダの場合は number / null を維持する
 -   `json` / `bodyTemplate` を省略した Webhook は、録画情報と先頭 video file 情報を含む JSON を送信する
+-   ストレージ通知は同じ閾値では一度だけ送信し、容量回復後に再度下回った場合は再送する
 
 利用できる主なプレースホルダ:
 
 | camelCase           | 外部コマンド互換名      | 説明                       |
 | ------------------- | ----------------------- | -------------------------- |
 | event               | EVENT                   | 通知イベント名             |
+| storageLevel        | STORAGE_LEVEL           | ストレージ警告レベル       |
+| storageName         | STORAGE_NAME            | 録画先名                   |
+| storagePath         | STORAGE_PATH            | 録画先パス                 |
+| storageFree         | STORAGE_FREE            | 空き容量 (MB)              |
+| storageThreshold    | STORAGE_THRESHOLD       | 到達した閾値 (MB)          |
 | recordedId          | RECORDEDID              | recorded id                |
 | reserveId           | RESERVEID               | reserve id                 |
 | ruleId              | RULEID                  | rule id                    |
@@ -1118,7 +1131,7 @@ urlscheme:
 | ライブストリーミングプロパティ名 | 種類               | 必須 | 説明                              |
 | -------------------------------- | ------------------ | ---- | --------------------------------- |
 | m2ts                             | コマンドプロパティ | no   | m2ts コマンド設定                 |
-| m2tsll                           | コマンドプロパティ | no   | m2tsll コマンド設定 (mmts.js)用 |
+| m2tsll                           | コマンドプロパティ | no   | m2tsll コマンド設定 (tlvdemux)用 |
 | webm                             | コマンドプロパティ | no   | webm コマンド設定                 |
 | mp4                              | コマンドプロパティ | no   | mp4 コマンド設定                  |
 | hls                              | コマンドプロパティ | no   | hls コマンド設定                  |
