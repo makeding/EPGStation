@@ -7,7 +7,7 @@ export default interface IRecordingEvent {
     emitCancelPrepRecording(reserve: Reserve): void;
     emitPrepRecordingFailed(reserve: Reserve): void;
     emitStartRecording(reserve: Reserve, recorded: Recorded): void;
-    emitRecordingFailed(reserve: Reserve, recorded: Recorded | null): void;
+    emitRecordingFailed(reserve: Reserve, recorded: Recorded | null, isRetryable: boolean): void;
     emitRecordingRetryOver(reserve: Reserve): void;
     emitFinishRecording(reserve: Reserve, recorded: Recorded, isNeedDeleteReservation: boolean): void;
     emitEventRelay(programs: { programId: apid.ProgramId; parentReserve: Reserve }[]): void;
@@ -15,7 +15,7 @@ export default interface IRecordingEvent {
     setCancelPrepRecording(callback: (reserve: Reserve) => void): void;
     setPrepRecordingFailed(callback: (reserve: Reserve) => void): void;
     setStartRecording(callback: (reserve: Reserve, recorded: Recorded) => void): void;
-    setRecordingFailed(callback: (reserve: Reserve, recorded: Recorded | null) => void): void;
+    setRecordingFailed(callback: (reserve: Reserve, recorded: Recorded | null, isRetryable: boolean) => void): void;
     setRecordingRetryOver(callback: (reserve: Reserve) => void): void;
     setFinishRecording(
         callback: (reserve: Reserve, recorded: Recorded, isNeedDeleteReservation: boolean) => void,

@@ -228,16 +228,16 @@ class RecorderModel implements IRecorderModel {
 
             this.log.system.error(`preprec failed: ${this.reserve.id}`);
             this.log.system.error(err);
-            if (retry < 3) {
-                // retry
+            if (retry < RecorderModel.PREP_RETRY_LIMIT) {
+                const waitTime = retry < 6 ? 5 * 1000 : retry < 14 ? 15 * 1000 : 60 * 1000;
+                if (Date.now() + waitTime >= this.reserve.endAt) {
+                    this.isPrepRecording = false;
+                    this.recordingEvent.emitPrepRecordingFailed(this.reserve);
+                    return;
+                }
                 setTimeout(() => {
                     this.prepRecord(retry + 1);
-                }, 1000 * 5); // 5s
-            } else if (retry < 30) {
-                // retry ここに来るのはチューナーが開けない or ソケットのハングアップとか？ //
-                setTimeout(() => {
-                    this.prepRecord(retry + 1);
-                }, 1000 * 60); // 60s
+                }, waitTime);
             } else {
                 this.isPrepRecording = false;
                 // 録画準備失敗を通知
@@ -894,7 +894,7 @@ class RecorderModel implements IRecorderModel {
                 this.cancel(false);
             } else {
                 this.isCanceledCallingFinished = true; // mirakurun の stream の終了処理を行わないようにセット
-                await this.recFailed(err).catch(err => {
+                await this.recFailed(err, false).catch(err => {
                     this.log.system.fatal(
                         `Unexpected recFailed error: reserveId: ${this.reserve.id}, recordedId: ${this.recordedId}`,
                     );
@@ -1101,7 +1101,7 @@ class RecorderModel implements IRecorderModel {
         const writeFinishedTarget = this.bufferedWriteStream;
         const tsreplaceCompletion = this.tsreplaceCompletion;
         if (writeFinishedTarget === null) {
-            await this.recFailed(new Error('BufferedWriteStreamIsNull'));
+            await this.recFailed(new Error('BufferedWriteStreamIsNull'), false);
 
             return;
         }
@@ -1116,12 +1116,12 @@ class RecorderModel implements IRecorderModel {
                 this.log.system.error(
                     `stream.finished error: reserveId: ${this.reserve.id} recordedId: ${this.recordedId}`,
                 );
-                await this.recFailed(err);
+                await this.recFailed(err, true);
             } else if (Date.now() + IRecordingStreamCreator.PREP_TIME < this.reserve.endAt) {
                 this.log.system.error(
                     `recording stream ended early: reserveId: ${this.reserve.id} recordedId: ${this.recordedId}`,
                 );
-                await this.recFailed(new Error('RecordingStreamEndedEarly'));
+                await this.recFailed(new Error('RecordingStreamEndedEarly'), true);
             }
         });
 
@@ -1135,7 +1135,7 @@ class RecorderModel implements IRecorderModel {
                 this.log.system.error(
                     `write stream.finished error: reserveId: ${this.reserve.id} recordedId: ${this.recordedId}`,
                 );
-                await this.recFailed(err);
+                await this.recFailed(err, false);
 
                 return;
             }
@@ -1147,7 +1147,7 @@ class RecorderModel implements IRecorderModel {
                         `tsreplace failed reserveId: ${this.reserve.id} recordedId: ${this.recordedId}`,
                     );
                     this.log.system.error(tsreplaceError);
-                    await this.recFailed(tsreplaceError);
+                    await this.recFailed(tsreplaceError, false);
                     return;
                 }
             }
@@ -1161,7 +1161,7 @@ class RecorderModel implements IRecorderModel {
                 this.log.system.error(
                     `recording output ended early reserveId: ${this.reserve.id} recordedId: ${this.recordedId}`,
                 );
-                await this.recFailed(earlyEndError);
+                await this.recFailed(earlyEndError, true);
                 return;
             }
 
@@ -1178,7 +1178,7 @@ class RecorderModel implements IRecorderModel {
      * 録画失敗処理
      * @param err: Error
      */
-    private async recFailed(err: Error): Promise<void> {
+    private async recFailed(err: Error, isRetryable: boolean): Promise<void> {
         if (this.isRecordingFailed === true || this.isRecEndStarted === true) {
             return;
         }
@@ -1205,7 +1205,7 @@ class RecorderModel implements IRecorderModel {
                 recorded = null;
             }
         }
-        this.recordingEvent.emitRecordingFailed(this.reserve, recorded);
+        this.recordingEvent.emitRecordingFailed(this.reserve, recorded, isRetryable);
     }
 
     /**
@@ -1723,6 +1723,7 @@ namespace RecorderModel {
     export const CANCEL_EVENT = 'RecordingCancelEvent';
     export const START_RECORDING_EVENT = 'StartRecordingEvent';
     export const EVENT_RELAY_CHECK_TIME = 20 * 1000; // イベントリレーの確認時間 20秒
+    export const PREP_RETRY_LIMIT = 30;
 }
 
 export default RecorderModel;

@@ -65,12 +65,12 @@ class RecordingManageModel implements IRecordingManageModel {
             this.deleteRecording(reserve.id);
         });
 
-        this.recordingEvent.setRecordingFailed(async reserve => {
+        this.recordingEvent.setRecordingFailed(async (reserve, _recorded, isRetryable) => {
             this.deleteRecording(reserve.id);
 
             const recordeds = await this.recordedDB.findReserveId(reserve.id);
 
-            if (recordeds.length < 3) {
+            if (isRetryable === true && recordeds.length < RecordingManageModel.RECORDING_ATTEMPT_LIMIT) {
                 // 録画を再設定
                 const recorder = await this.provider();
                 if (recorder.setTimer(reserve, false) === true) {
@@ -80,8 +80,11 @@ class RecordingManageModel implements IRecordingManageModel {
                     this.log.system.error(`readd recording error: ${reserve.id}`);
                 }
             } else {
-                // リトライ回数オーバー
-                this.log.system.error(`recording retry over: ${reserve.id}`);
+                this.log.system.error(
+                    isRetryable === true
+                        ? `recording retry over: ${reserve.id}`
+                        : `recording failed without retry: ${reserve.id}`,
+                );
                 this.recordingEvent.emitRecordingRetryOver(reserve);
             }
         });
@@ -289,6 +292,10 @@ class RecordingManageModel implements IRecordingManageModel {
             this.recordingIndex[key].resetTimer();
         }
     }
+}
+
+namespace RecordingManageModel {
+    export const RECORDING_ATTEMPT_LIMIT = 5;
 }
 
 export default RecordingManageModel;

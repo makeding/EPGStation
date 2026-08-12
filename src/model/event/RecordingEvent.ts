@@ -52,9 +52,10 @@ class RecordingEvent implements IRecordingEvent {
      * 録画失敗イベント発行
      * @param reserve: Reserve
      * @param recorded: Recorded | null
+     * @param isRetryable: boolean
      */
-    public emitRecordingFailed(reserve: Reserve, recorded: Recorded | null): void {
-        this.emitter.emit(RecordingEvent.RECORDING_FAILED_EVENT, reserve, recorded);
+    public emitRecordingFailed(reserve: Reserve, recorded: Recorded | null, isRetryable: boolean): void {
+        this.emitter.emit(RecordingEvent.RECORDING_FAILED_EVENT, reserve, recorded, isRetryable);
     }
 
     /**
@@ -141,16 +142,21 @@ class RecordingEvent implements IRecordingEvent {
 
     /**
      * 録画失敗イベント登録
-     * @param callback: (reserve: Reserve, recorded: Recorded | null) => void
+     * @param callback: (reserve: Reserve, recorded: Recorded | null, isRetryable: boolean) => void
      */
-    public setRecordingFailed(callback: (reserve: Reserve, recorded: Recorded | null) => void): void {
-        this.emitter.on(RecordingEvent.RECORDING_FAILED_EVENT, async (reserve: Reserve, recorded: Recorded | null) => {
-            try {
-                await callback(reserve, recorded);
-            } catch (err: any) {
-                this.log.system.error(err);
-            }
-        });
+    public setRecordingFailed(
+        callback: (reserve: Reserve, recorded: Recorded | null, isRetryable: boolean) => void,
+    ): void {
+        this.emitter.on(
+            RecordingEvent.RECORDING_FAILED_EVENT,
+            async (reserve: Reserve, recorded: Recorded | null, isRetryable: boolean) => {
+                try {
+                    await callback(reserve, recorded, isRetryable);
+                } catch (err: any) {
+                    this.log.system.error(err);
+                }
+            },
+        );
     }
 
     /**
