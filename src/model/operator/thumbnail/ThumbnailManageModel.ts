@@ -7,6 +7,7 @@ import Thumbnail from '../../../db/entities/Thumbnail';
 import FileUtil from '../../../util/FileUtil';
 import ProcessUtil from '../../../util/ProcessUtil';
 import IVideoUtil from '../../api/video/IVideoUtil';
+import IChannelDB from '../../db/IChannelDB';
 import IRecordedDB from '../../db/IRecordedDB';
 import IThumbnailDB from '../../db/IThumbnailDB';
 import IVideoFileDB from '../../db/IVideoFileDB';
@@ -23,6 +24,7 @@ export default class ThumbnailManageModel implements IThumbnailManageModel {
     private log: ILogger;
     private config: IConfigFile;
     private queue: IPromiseQueue;
+    private channelDB: IChannelDB;
     private recordedDB: IRecordedDB;
     private videoFileDB: IVideoFileDB;
     private thumbnailDB: IThumbnailDB;
@@ -33,6 +35,7 @@ export default class ThumbnailManageModel implements IThumbnailManageModel {
         @inject('ILoggerModel') logger: ILoggerModel,
         @inject('IConfiguration') configuration: IConfiguration,
         @inject('IPromiseQueue') queue: IPromiseQueue,
+        @inject('IChannelDB') channelDB: IChannelDB,
         @inject('IRecordedDB') recordedDB: IRecordedDB,
         @inject('IVideoFileDB') videoFileDB: IVideoFileDB,
         @inject('IThumbnailDB') thumbnailDB: IThumbnailDB,
@@ -42,6 +45,7 @@ export default class ThumbnailManageModel implements IThumbnailManageModel {
         this.log = logger.getLogger();
         this.config = configuration.getConfig();
         this.queue = queue;
+        this.channelDB = channelDB;
         this.recordedDB = recordedDB;
         this.videoFileDB = videoFileDB;
         this.thumbnailDB = thumbnailDB;
@@ -70,8 +74,22 @@ export default class ThumbnailManageModel implements IThumbnailManageModel {
      */
     private async create(videoFileId: apid.VideoFileId): Promise<void> {
         const videoFile = await this.videoFileDB.findId(videoFileId);
+        if (videoFile === null) {
+            this.log.system.error(`video file is not found: ${videoFileId}`);
+            throw new Error('VideoFileIsNotFound');
+        }
+
+        const recorded = await this.recordedDB.findId(videoFile.recordedId);
+        if (recorded !== null) {
+            const channel = await this.channelDB.findId(recorded.channelId);
+            if (channel?.channelType === 'BS4K') {
+                this.log.system.info(`skip BS4K thumbnail: ${videoFileId}, channelId: ${recorded.channelId}`);
+                return;
+            }
+        }
+
         const videoFilePath = await this.videoUtil.getFullFilePathFromId(videoFileId);
-        if (videoFile === null || videoFilePath === null) {
+        if (videoFilePath === null) {
             this.log.system.error(`video file is not found: ${videoFileId}`);
             throw new Error('VideoFileIsNotFound');
         }

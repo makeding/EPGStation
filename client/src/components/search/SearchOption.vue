@@ -314,7 +314,8 @@
                             class="start-time-select"
                             label="start"
                             :items="searchState.getStartTimeItems()"
-                            v-model="searchState.searchOption.startTime"
+                            :value="searchState.searchOption.startTime"
+                            @input="setStartTime"
                             clearable
                             :menu-props="{ auto: true }"
                         ></v-select>
@@ -323,7 +324,8 @@
                             class="range-time-select"
                             label="range"
                             :items="searchState.getRangeTimeItems()"
-                            v-model="searchState.searchOption.rangeTime"
+                            :value="searchState.searchOption.rangeTime"
+                            @input="setRangeTime"
                             clearable
                             :menu-props="{ auto: true }"
                         ></v-select>
@@ -510,6 +512,28 @@ export default class SearchOption extends Vue {
 
     public onClickSearch(): void {
         this.$emit('search');
+    }
+
+    public setStartTime(value: number | null): void {
+        if (this.searchState.searchOption === null) {
+            return;
+        }
+
+        this.searchState.searchOption.startTime = value === null ? undefined : value;
+        if (value === null) {
+            this.searchState.searchOption.rangeTime = undefined;
+        }
+    }
+
+    public setRangeTime(value: number | null): void {
+        if (this.searchState.searchOption === null) {
+            return;
+        }
+
+        this.searchState.searchOption.rangeTime = value === null ? undefined : value;
+        if (value === null) {
+            this.searchState.searchOption.startTime = undefined;
+        }
     }
 
     public onClickClear(): void {
