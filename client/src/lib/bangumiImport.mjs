@@ -1,4 +1,5 @@
 // Shared by the browser importer and the existing CLI. No browser or Node globals.
+import { createRomajiSlug, extractBangumiAliases, extractMyAnimeListRomaji, pickMyAnimeListMatch } from './bangumiRomaji.mjs';
 const WEEK_BITS = [1, 2, 4, 8, 16, 32, 64];
 
 export function nextQuarter(now = new Date()) {
@@ -14,6 +15,11 @@ export function quarterMonths(month) {
         const date = new Date(Date.UTC(year, start - 1 + offset, 1));
         return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
     });
+}
+
+export function quarterLabel(month) {
+    quarterMonths(month);
+    return `${month.slice(0, 4)}年 第${(Number(month.slice(5)) + 2) / 3}四半期（${month}）`;
 }
 
 export async function fetchBangumiWatching(user, request = fetch) {
@@ -40,6 +46,34 @@ export async function fetchBangumiWatching(user, request = fetch) {
     return subjects;
 }
 
+export async function resolveRomaji(subject, request = fetch) {
+    let detail = null;
+    try {
+        const response = await request(`https://api.bgm.tv/v0/subjects/${subject.id}`, { headers: { Accept: 'application/json' } });
+        if (response.ok) detail = await response.json();
+    } catch (_) {
+        // A directory fallback must not prevent the EPG preview.
+    }
+    let result = createRomajiSlug(subject, extractBangumiAliases(detail), { romajiMap: {} });
+    if (result.isRomajiFallback) {
+        try {
+            const url = new URL('https://api.jikan.moe/v4/anime');
+            url.searchParams.set('q', subject.name);
+            url.searchParams.set('limit', '5');
+            const response = await request(url.toString(), { headers: { Accept: 'application/json' } });
+            if (response.ok) {
+                const json = await response.json();
+                const match = pickMyAnimeListMatch(subject, Array.isArray(json?.data) ? json.data : []);
+                const romaji = match && extractMyAnimeListRomaji(match);
+                if (romaji) result = { romaji, isRomajiFallback: false };
+            }
+        } catch (_) {
+            // Keep the visible bgm-ID fallback when Jikan is unavailable.
+        }
+    }
+    return result;
+}
+
 export function filterQuarter(subjects, month) {
     const months = quarterMonths(month);
     return subjects.filter(subject => !subject.date || months.some(value => subject.date.startsWith(value)));
@@ -47,9 +81,10 @@ export function filterQuarter(subjects, month) {
 
 export function keywordVariants(title) {
     const chars = Array.from(title.trim());
-    const min = Math.ceil(chars.length / 2);
+    const max = Math.min(chars.length, 50);
+    const min = Math.ceil(max / 2);
     const variants = [];
-    for (let length = chars.length; length >= min; length--) {
+    for (let length = max; length >= min; length--) {
         const value = chars.slice(0, length).join('').trim();
         if (value && !variants.includes(value)) variants.push(value);
     }
@@ -58,6 +93,18 @@ export function keywordVariants(title) {
         if (value && !variants.includes(value)) variants.push(value);
     }
     return variants;
+}
+
+// A completed work item is published immediately; at most `limit` scans run at once.
+export async function scanWithConcurrency(subjects, limit, scan, publish) {
+    let cursor = 0;
+    const workers = Array.from({ length: Math.min(limit, subjects.length) }, async () => {
+        while (cursor < subjects.length) {
+            const subject = subjects[cursor++];
+            publish(await scan(subject));
+        }
+    });
+    await Promise.all(workers);
 }
 
 export async function searchTitle(title, search) {
@@ -98,6 +145,13 @@ export function isBsChannel(channel) {
 }
 
 export function defaultCandidateIndices(groups, channels) {
+    const terrestrial = groups.map((candidate, index) => {
+        const channel = channels.get(candidate.channelId);
+        const name = String(channel?.name || '').normalize('NFKC').toUpperCase();
+        const type = String(channel?.channelType || '').toUpperCase();
+        return type.startsWith('GR') && /(?:^|[^A-Z])(?:MBS|TBS)(?=$|[^A-Z])/.test(name) ? index : -1;
+    }).filter(index => index >= 0);
+    if (terrestrial.length) return terrestrial;
     const bs = groups.map((candidate, index) => isBsChannel(channels.get(candidate.channelId)) ? index : -1).filter(index => index >= 0);
     return bs.length ? bs : groups.length ? [0] : [];
 }
@@ -105,6 +159,11 @@ export function defaultCandidateIndices(groups, channels) {
 export function directorySlug(subject) {
     const source = [subject.name, subject.nameCn].find(value => /^[\x20-\x7e]{5,}$/.test(value || ''));
     return source ? source.normalize('NFKD').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 100) : `bgm-${subject.id}`;
+}
+
+export function isValidDirectory(value) {
+    if (typeof value !== 'string' || !value.trim() || /^[\\/]/.test(value) || /^[A-Za-z]:/.test(value) || /[\x00-\x1f]/.test(value)) return false;
+    return !value.split(/[\\/]/).includes('..');
 }
 
 export function createRule(subject, keyword, candidate, channel, month, rangeSeconds = 7200) {
