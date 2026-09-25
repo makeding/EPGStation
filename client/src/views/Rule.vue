@@ -19,6 +19,7 @@
         <transition name="page">
             <div ref="appContent" class="app-content">
                 <v-container>
+                    <BangumiQuarterImport v-if="!isEditMode" v-on:created="refreshRules"></BangumiQuarterImport>
                     <div v-if="ruleState.getRules().length > 0" v-bind:style="contentWrapStyle">
                         <RuleItems :rules="ruleState.getRules()" :isEditMode.sync="isEditMode" v-on:selected="selectItem"></RuleItems>
                         <Pagination :total="ruleState.getTotal()" :pageSize="settingValue.rulesLength"></Pagination>
@@ -41,6 +42,7 @@
 <script lang="ts">
 import Pagination from '@/components/pagination/Pagination.vue';
 import RuleItems from '@/components/rules/RuleItems.vue';
+import BangumiQuarterImport from '@/components/rules/BangumiQuarterImport.vue';
 import RuleMultipleDeletionDialog from '@/components/rules/RuleMultipleDeletionDialog.vue';
 import RuleSearchMenu from '@/components/rules/RuleSearchMenu.vue';
 import EditTitleBar from '@/components/titleBar/EditTitleBar.vue';
@@ -64,6 +66,7 @@ Component.registerHooks(['beforeRouteUpdate', 'beforeRouteLeave']);
         TitleBar,
         RuleSearchMenu,
         RuleItems,
+        BangumiQuarterImport,
         Pagination,
         RuleMultipleDeletionDialog,
     },
@@ -120,6 +123,10 @@ export default class Reserves extends Vue {
         Util.move(this.$router, {
             path: '/search',
         });
+    }
+
+    public async refreshRules(): Promise<void> {
+        await this.ruleState.fetchData(this.createFetchDataOption());
     }
 
     public onEdit(): void {

@@ -91,6 +91,9 @@ export default class RuleDB implements IRuleDB {
         // updateCnt 更新
         const convertedRule = this.convertRuleToDBRule(newRule);
         convertedRule.updateCnt = oldRule.updateCnt + 1;
+        if (typeof newRule.bangumiId === 'undefined') {
+            convertedRule.bangumiId = oldRule.bangumiId ?? null;
+        }
 
         const connection = await this.op.getConnection();
         const queryBuilder = connection
@@ -213,6 +216,7 @@ export default class RuleDB implements IRuleDB {
      */
     private convertRuleToDBRule(rule: RuleWithCnt | apid.Rule | apid.AddRuleOption): Rule {
         const convertedRule: Rule = <any>{
+            bangumiId: typeof rule.bangumiId === 'number' ? rule.bangumiId : null,
             updateCnt: typeof rule === 'undefined' ? 0 : (<RuleWithCnt>rule).updateCnt,
             isTimeSpecification: rule.isTimeSpecification,
             keyword: typeof rule.searchOption.keyword === 'undefined' ? null : rule.searchOption.keyword,
@@ -363,6 +367,7 @@ export default class RuleDB implements IRuleDB {
     private convertDBRuleToRule(rule: Rule): RuleWithCnt {
         const convertedRule: RuleWithCnt = {
             id: rule.id,
+            ...(rule.bangumiId !== null ? { bangumiId: rule.bangumiId } : {}),
             updateCnt: rule.updateCnt,
             isTimeSpecification: rule.isTimeSpecification,
             searchOption: {

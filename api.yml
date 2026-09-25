@@ -690,6 +690,10 @@ components:
                 - searchOption
                 - reserveOption
             properties:
+                bangumiId:
+                    description: Bangumi 作品 ID。Bangumi から作成したルールのみ設定する
+                    type: integer
+                    minimum: 1
                 isTimeSpecification:
                     description: 時刻指定予約か
                     type: boolean

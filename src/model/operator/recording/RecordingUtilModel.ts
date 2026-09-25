@@ -12,12 +12,14 @@ import IVideoUtil from '../../api/video/IVideoUtil';
 import IChannelDB from '../../db/IChannelDB';
 import IProgramDB from '../../db/IProgramDB';
 import IVideoFileDB from '../../db/IVideoFileDB';
+import IRuleDB from '../../db/IRuleDB';
 import IConfigFile, { RecordedDirInfo } from '../../IConfigFile';
 import IConfiguration from '../../IConfiguration';
 import IExecutionManagementModel from '../../IExecutionManagementModel';
 import ILogger from '../../ILogger';
 import ILoggerModel from '../../ILoggerModel';
 import IRecordingUtilModel, { RecFilePathInfo } from './IRecordingUtilModel';
+import { saveBangumiCover } from './BangumiCoverUtil';
 
 @injectable()
 class RecordingUtilModel implements IRecordingUtilModel {
@@ -27,6 +29,7 @@ class RecordingUtilModel implements IRecordingUtilModel {
     private channelDB: IChannelDB;
     private programDB: IProgramDB;
     private videoFileDB: IVideoFileDB;
+    private ruleDB: IRuleDB;
     private videoUtil: IVideoUtil;
 
     constructor(
@@ -36,6 +39,7 @@ class RecordingUtilModel implements IRecordingUtilModel {
         @inject('IChannelDB') channelDB: IChannelDB,
         @inject('IProgramDB') programDB: IProgramDB,
         @inject('IVideoFileDB') videoFileDB: IVideoFileDB,
+        @inject('IRuleDB') ruleDB: IRuleDB,
         @inject('IVideoUtil') videoUtil: IVideoUtil,
     ) {
         this.log = logger.getLogger();
@@ -44,6 +48,7 @@ class RecordingUtilModel implements IRecordingUtilModel {
         this.channelDB = channelDB;
         this.programDB = programDB;
         this.videoFileDB = videoFileDB;
+        this.ruleDB = ruleDB;
         this.videoUtil = videoUtil;
     }
 
@@ -137,6 +142,18 @@ class RecordingUtilModel implements IRecordingUtilModel {
                 this.log.system.fatal(err);
                 throw err;
             }
+        }
+
+        if (!isEnableTmp && reserve.ruleId !== null) {
+            void this.ruleDB
+                .findId(reserve.ruleId)
+                .then(rule => {
+                    if (typeof rule?.bangumiId !== 'number') return;
+                    const relative = path.relative(parentDir!.path, dir);
+                    if (relative.startsWith('..') || path.isAbsolute(relative)) return;
+                    return saveBangumiCover(dir, rule.bangumiId);
+                })
+                .catch(err => this.log.system.warn(`Bangumi cover failed for rule ${reserve.ruleId}: ${err}`));
         }
 
         const newFileName = await this.getFileName(

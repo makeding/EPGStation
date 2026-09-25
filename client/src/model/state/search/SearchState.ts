@@ -60,6 +60,7 @@ export default class SearchState implements ISearchState {
     private rangeTimeItems: SelectorItem[] = [];
 
     private ruleId: apid.RuleId | null = null;
+    private bangumiId: number | undefined;
 
     private searchResult: SearchResultItem[] | null = null;
     private reservesResult: apid.ReserveItem[] | null = null;
@@ -131,6 +132,7 @@ export default class SearchState implements ISearchState {
      */
     public async init(ruleId: apid.RuleId | null = null): Promise<void> {
         this.ruleId = ruleId;
+        this.bangumiId = undefined;
         this.isTimeSpecification = false;
         this.initSearchOption();
         this.initTimeReserveOption();
@@ -666,6 +668,7 @@ export default class SearchState implements ISearchState {
      * @param rule: apid.Rule
      */
     private setRuleOption(rule: apid.Rule): void {
+        this.bangumiId = rule.bangumiId;
         this.isTimeSpecification = rule.isTimeSpecification;
         if (this.isTimeSpecification === true) {
             this.setTimeReserveRuleSearchOption(rule.searchOption);
@@ -2147,6 +2150,10 @@ export default class SearchState implements ISearchState {
 
         if (this.saveOption !== null) {
             rule.saveOption = this.createReserveSaveOption(this.saveOption);
+        }
+
+        if (typeof this.bangumiId !== 'undefined') {
+            rule.bangumiId = this.bangumiId;
         }
 
         if (this.encodeOption !== null) {

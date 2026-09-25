@@ -11,6 +11,13 @@ export default class Rule extends BaseEntity {
     public id!: number;
 
     @Column({
+        name: 'bangumi_id',
+        type: 'integer',
+        nullable: true,
+    })
+    public bangumiId: number | null = null;
+
+    @Column({
         type: 'integer',
         default: 0,
     })
