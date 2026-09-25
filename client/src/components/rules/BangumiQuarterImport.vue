@@ -193,8 +193,12 @@ export default class BangumiQuarterImport extends Vue {
         this.saving = true;
         this.status = '選択したルールを作成しています…';
         try {
-            const all = await this.ruleApi.gets({ limit: 10000 });
-            const existing = all.rules;
+            const existing: apid.Rule[] = [];
+            for (;;) {
+                const page = await this.ruleApi.gets({ offset: existing.length, limit: 500 });
+                existing.push(...page.rules);
+                if (existing.length >= page.total || page.rules.length === 0) break;
+            }
             for (const item of this.items)
                 for (const choice of item.choices) {
                     if (!choice.selected || (choice.result && choice.result !== 'failed')) continue;
