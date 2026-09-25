@@ -30,6 +30,17 @@ type ExpressStaticMime = {
     };
 };
 
+// Nix normalizes file times, so size/mtime validators can reuse an old index.html
+// after a deployment and leave it pointing at removed, fingerprinted bundles.
+export const CLIENT_STATIC_OPTIONS = {
+    cacheControl: false,
+    etag: false,
+    lastModified: false,
+    setHeaders: (res: http.ServerResponse): void => {
+        res.setHeader('Cache-Control', 'no-store');
+    },
+};
+
 @injectable()
 class ServiceServer implements IServiceServer {
     private log: ILogger;
@@ -167,7 +178,7 @@ class ServiceServer implements IServiceServer {
         this.app.use(this.createUrl('/streamfiles'), express.static(this.config.streamFilePath));
 
         // client
-        this.app.use(this.createUrl('/'), express.static(ServiceServer.CLIENT_DIR));
+        this.app.use(this.createUrl('/'), express.static(ServiceServer.CLIENT_DIR, CLIENT_STATIC_OPTIONS));
     }
 
     /**
