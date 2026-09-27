@@ -16,69 +16,78 @@
             <template v-if="items.length">
                 <v-divider class="mb-3"></v-divider>
                 <div v-for="item in items" :key="item.subject.id" :ref="`subject-${item.subject.id}`" class="subject-row py-2" tabindex="-1">
-                    <div class="d-flex">
-                        <div class="cover mr-3">
-                            <img v-if="item.subject.coverUrl" :src="item.subject.coverUrl" :alt="`${item.subject.name} の表紙`" v-on:error="item.subject.coverUrl = ''" />
-                            <span v-else>表紙なし</span>
-                        </div>
-                        <div class="subject-details">
-                            <div class="font-weight-medium">
-                                {{ item.subject.name }}
-                                <span v-if="item.subject.nameCn">
-                                    /
-                                    <span lang="zh-CN" class="name-cn">{{ item.subject.nameCn }}</span>
-                                </span>
-                            </div>
-                            <div class="caption">
-                                放送開始: {{ item.subject.date || '日付不明' }}
-                                <v-chip v-if="item.alreadyLinked" x-small outlined class="ml-1">ルール登録済み</v-chip>
-                                <span v-if="item.reason">— {{ item.reason }}</span>
-                            </div>
-                            <v-btn v-if="item.lookupFailed" small text color="primary" :loading="item.searching" :disabled="busy" v-on:click="retry(item)">この作品を再検索</v-btn>
-                        </div>
-                    </div>
-                    <div v-for="(choice, index) in item.choices" :key="index" class="choice-row">
-                        <v-checkbox
-                            v-model="choice.selected"
-                            :disabled="busy || choice.result === 'created' || choice.result === 'exists'"
-                            class="candidate-checkbox my-0"
-                            dense
-                            hide-details
-                        >
-                            <template v-slot:label>
-                                <span>
-                                    {{ choice.candidate.program.name }} · {{ choice.channelLabel }} · {{ formatDate(choice.candidate.program.startAt) }} ·
-                                    {{ formatTime(choice.candidate.startSeconds) }}–{{ formatTime(choice.candidate.startSeconds + 7200) }}
-                                </span>
-                            </template>
-                        </v-checkbox>
-                        <div class="caption choice-detail">検索: {{ item.keyword }}</div>
-                        <div class="path-row choice-detail">
-                            <v-text-field
-                                v-model.trim="choice.rule.saveOption.directory"
-                                class="path-field"
-                                label="保存先"
-                                dense
-                                outlined
-                                :rules="[directoryRule]"
-                                :disabled="busy || choice.result === 'created' || choice.result === 'exists'"
-                            ></v-text-field>
-                            <v-btn
-                                class="path-reset"
-                                small
-                                text
-                                :disabled="busy || choice.rule.saveOption.directory === choice.defaultDirectory || choice.result === 'created' || choice.result === 'exists'"
-                                v-on:click="resetDirectory(choice)"
-                            >
-                                リセット
-                            </v-btn>
-                        </div>
-                        <div class="caption choice-detail">
-                            <span v-if="choice.result" :class="choice.result === 'failed' ? 'error--text' : choice.result === 'creating' ? '' : 'success--text'">
-                                · {{ resultLabel(choice) }}
-                            </span>
-                        </div>
-                    </div>
+                    <v-expansion-panels v-model="item.openPanel" accordion flat class="subject-collapse">
+                        <v-expansion-panel>
+                            <v-expansion-panel-header :disabled="busy">
+                                <div class="d-flex align-center">
+                                    <div class="cover mr-3">
+                                        <img
+                                            v-if="item.subject.coverUrl"
+                                            :src="item.subject.coverUrl"
+                                            :alt="`${item.subject.name} の表紙`"
+                                            v-on:error="item.subject.coverUrl = ''"
+                                        />
+                                        <span v-else>表紙なし</span>
+                                    </div>
+                                    <div class="subject-details">
+                                        <div class="font-weight-medium">
+                                            {{ item.subject.name }}
+                                            <span v-if="item.subject.nameCn">
+                                                /
+                                                <span lang="zh-CN" class="name-cn">{{ item.subject.nameCn }}</span>
+                                            </span>
+                                        </div>
+                                        <div class="caption">
+                                            放送開始: {{ item.subject.date || '日付不明' }}
+                                            <v-chip v-if="item.alreadyLinked" x-small outlined class="ml-1">ルール登録済み</v-chip>
+                                            <span v-if="item.alreadyLinked && item.choices.length" class="ml-1">候補 {{ item.choices.length }} 件</span>
+                                            <span v-if="item.alreadyLinked && item.choices.length" class="ml-1">（展開して確認）</span>
+                                            <span v-if="item.reason">— {{ item.reason }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </v-expansion-panel-header>
+                            <v-expansion-panel-content>
+                                <v-btn v-if="item.lookupFailed" small text color="primary" :loading="item.searching" :disabled="busy" v-on:click="retry(item)">
+                                    この作品を再検索
+                                </v-btn>
+                                <div v-for="(choice, index) in item.choices" :key="index" class="choice-row">
+                                    <v-checkbox
+                                        v-model="choice.selected"
+                                        :disabled="busy || choice.result === 'created' || choice.result === 'exists'"
+                                        class="candidate-checkbox my-0"
+                                        dense
+                                        hide-details
+                                    >
+                                        <template v-slot:label>
+                                            <span>
+                                                {{ choice.candidate.program.name }} · {{ choice.channelLabel }} · {{ formatDate(choice.candidate.program.startAt) }} ·
+                                                {{ formatTime(choice.candidate.startSeconds) }}–{{ formatTime(choice.candidate.startSeconds + 7200) }}
+                                            </span>
+                                        </template>
+                                    </v-checkbox>
+                                    <div class="caption choice-detail">検索: {{ item.keyword }}</div>
+                                    <div class="path-row choice-detail">
+                                        <v-text-field
+                                            v-model.trim="choice.rule.saveOption.directory"
+                                            class="path-field"
+                                            label="保存先"
+                                            dense
+                                            outlined
+                                            :rules="[directoryRule]"
+                                            :disabled="busy || choice.result === 'created' || choice.result === 'exists'"
+                                        ></v-text-field>
+                                        <v-btn class="path-reset" small text :disabled="cannotResetDirectory(choice)" v-on:click="resetDirectory(choice)">リセット</v-btn>
+                                    </div>
+                                    <div class="caption choice-detail">
+                                        <span v-if="choice.result" :class="choice.result === 'failed' ? 'error--text' : choice.result === 'creating' ? '' : 'success--text'">
+                                            · {{ resultLabel(choice) }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </v-expansion-panel-content>
+                        </v-expansion-panel>
+                    </v-expansion-panels>
                 </div>
                 <v-divider class="mt-4 mb-4"></v-divider>
                 <div class="confirm-actions">
@@ -135,6 +144,7 @@ interface Item {
     lookupFailed: boolean;
     searching: boolean;
     alreadyLinked: boolean;
+    openPanel: number | null;
 }
 
 @Component
@@ -236,7 +246,7 @@ export default class BangumiQuarterImport extends Vue {
 
     private async scanSubject(subject: BangumiSubject): Promise<Item> {
         const alreadyLinked = this.existingBangumiIds.has(subject.id);
-        const item: Item = { subject, keyword: '', reason: '', choices: [], lookupFailed: false, searching: false, alreadyLinked };
+        const item: Item = { subject, keyword: '', reason: '', choices: [], lookupFailed: false, searching: false, alreadyLinked, openPanel: alreadyLinked ? null : 0 };
         if (!subject.date) {
             item.reason = '放送開始日が不明のため自動選択しません';
             return item;
@@ -278,6 +288,7 @@ export default class BangumiQuarterImport extends Vue {
         } catch (err: any) {
             item.reason = `番組表の検索に失敗: ${this.message(err)}`;
             item.lookupFailed = true;
+            item.openPanel = 0;
         }
         return item;
     }
@@ -341,6 +352,9 @@ export default class BangumiQuarterImport extends Vue {
     public resetDirectory(choice: Choice): void {
         if (this.busy || choice.result === 'created' || choice.result === 'exists') return;
         choice.rule.saveOption.directory = choice.defaultDirectory;
+    }
+    public cannotResetDirectory(choice: Choice): boolean {
+        return this.busy || choice.rule.saveOption.directory === choice.defaultDirectory || choice.result === 'created' || choice.result === 'exists';
     }
     public formatTime(seconds: number): string {
         return `${String(Math.floor((seconds % 86400) / 3600)).padStart(2, '0')}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}`;
