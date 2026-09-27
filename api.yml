@@ -691,9 +691,10 @@ components:
                 - reserveOption
             properties:
                 bangumiId:
-                    description: Bangumi 作品 ID。Bangumi から作成したルールのみ設定する
+                    description: Bangumi 作品 ID。null の場合は関連付けを解除する
                     type: integer
                     minimum: 1
+                    nullable: true
                 isTimeSpecification:
                     description: 時刻指定予約か
                     type: boolean

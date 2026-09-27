@@ -14,7 +14,7 @@ export function scanWithConcurrency<T, R>(subjects: T[], limit: number, scan: (s
 export function searchTitle(title: string, search: (keyword: string) => Promise<apid.ScheduleProgramItem[]>): Promise<{ keyword: string; programs: apid.ScheduleProgramItem[] }>;
 export function candidateGroups(programs: apid.ScheduleProgramItem[]): Candidate[];
 export function isBsChannel(channel?: apid.ChannelItem): boolean;
-export function defaultCandidateIndices(groups: Candidate[], channels: Map<number, apid.ChannelItem>): number[];
+export function defaultCandidateIndices(groups: Candidate[], channels: Map<number, apid.ChannelItem>, alreadyLinked?: boolean): number[];
 export function directorySlug(subject: BangumiSubject): string;
 export function isValidDirectory(value: string | undefined): boolean;
 export function createRule(subject: BangumiSubject, keyword: string, candidate: Candidate, channel: apid.ChannelItem | undefined, month: string, rangeSeconds?: number): apid.AddRuleOption & { saveOption: apid.ReserveSaveOption };

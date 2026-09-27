@@ -91,6 +91,7 @@ export default class RuleDB implements IRuleDB {
         // updateCnt 更新
         const convertedRule = this.convertRuleToDBRule(newRule);
         convertedRule.updateCnt = oldRule.updateCnt + 1;
+        // Omitted by older clients means unchanged; explicit null clears the Bangumi link.
         if (typeof newRule.bangumiId === 'undefined') {
             convertedRule.bangumiId = oldRule.bangumiId ?? null;
         }

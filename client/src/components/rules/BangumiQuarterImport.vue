@@ -15,7 +15,7 @@
             </v-alert>
             <template v-if="items.length">
                 <v-divider class="mb-3"></v-divider>
-                <div v-for="item in items" :key="item.subject.id" :ref="`subject-${item.subject.id}`" class="subject-row py-3" tabindex="-1">
+                <div v-for="item in items" :key="item.subject.id" :ref="`subject-${item.subject.id}`" class="subject-row py-2" tabindex="-1">
                     <div class="d-flex">
                         <div class="cover mr-3">
                             <img v-if="item.subject.coverUrl" :src="item.subject.coverUrl" :alt="`${item.subject.name} の表紙`" v-on:error="item.subject.coverUrl = ''" />
@@ -31,13 +31,20 @@
                             </div>
                             <div class="caption">
                                 放送開始: {{ item.subject.date || '日付不明' }}
+                                <v-chip v-if="item.alreadyLinked" x-small outlined class="ml-1">ルール登録済み</v-chip>
                                 <span v-if="item.reason">— {{ item.reason }}</span>
                             </div>
                             <v-btn v-if="item.lookupFailed" small text color="primary" :loading="item.searching" :disabled="busy" v-on:click="retry(item)">この作品を再検索</v-btn>
                         </div>
                     </div>
                     <div v-for="(choice, index) in item.choices" :key="index" class="choice-row">
-                        <v-checkbox v-model="choice.selected" :disabled="busy || choice.result === 'created' || choice.result === 'exists'" class="mt-1" hide-details>
+                        <v-checkbox
+                            v-model="choice.selected"
+                            :disabled="busy || choice.result === 'created' || choice.result === 'exists'"
+                            class="candidate-checkbox my-0"
+                            dense
+                            hide-details
+                        >
                             <template v-slot:label>
                                 <span>
                                     {{ choice.candidate.program.name }} · {{ choice.channelLabel }} · {{ formatDate(choice.candidate.program.startAt) }} ·
@@ -127,6 +134,7 @@ interface Item {
     choices: Choice[];
     lookupFailed: boolean;
     searching: boolean;
+    alreadyLinked: boolean;
 }
 
 @Component
@@ -141,6 +149,7 @@ export default class BangumiQuarterImport extends Vue {
     public retrying = 0;
     public confirmCount = 0;
     private channels = new Map<number, apid.ChannelItem>();
+    private existingBangumiIds = new Set<number>();
 
     private ruleApi = container.get<IRuleApiModel>('IRuleApiModel');
     private scheduleApi = container.get<IScheduleApiModel>('IScheduleApiModel');
@@ -174,8 +183,11 @@ export default class BangumiQuarterImport extends Vue {
         this.scanning = true;
         this.error = '';
         this.items = [];
-        this.status = 'Bangumi の作品を取得しています…';
+        this.status = '既存ルールを確認しています…';
         try {
+            const existing = await this.loadAllRules();
+            this.existingBangumiIds = new Set(existing.map(rule => rule.bangumiId).filter((id): id is number => typeof id === 'number'));
+            this.status = 'Bangumi の作品を取得しています…';
             const subjects = filterQuarter(await fetchBangumiWatching(this.user), this.quarter);
             this.storage.set('bangumi-quarter-user', this.user);
             if (!subjects.length) {
@@ -223,7 +235,8 @@ export default class BangumiQuarterImport extends Vue {
     }
 
     private async scanSubject(subject: BangumiSubject): Promise<Item> {
-        const item: Item = { subject, keyword: '', reason: '', choices: [], lookupFailed: false, searching: false };
+        const alreadyLinked = this.existingBangumiIds.has(subject.id);
+        const item: Item = { subject, keyword: '', reason: '', choices: [], lookupFailed: false, searching: false, alreadyLinked };
         if (!subject.date) {
             item.reason = '放送開始日が不明のため自動選択しません';
             return item;
@@ -248,7 +261,7 @@ export default class BangumiQuarterImport extends Vue {
             }
             const romaji = await resolveRomaji(subject);
             const subjectWithRomaji = { ...subject, romaji: romaji.romaji };
-            const defaults = defaultCandidateIndices(groups, this.channels);
+            const defaults = defaultCandidateIndices(groups, this.channels, alreadyLinked);
             item.choices = groups.map((candidate, index) => {
                 const channel = this.channels.get(candidate.channelId);
                 const rule = createRule(subjectWithRomaji, found.keyword, candidate, channel, this.quarter);
@@ -275,12 +288,7 @@ export default class BangumiQuarterImport extends Vue {
         this.saving = true;
         this.status = '選択したルールを作成しています…';
         try {
-            const existing: apid.Rule[] = [];
-            for (;;) {
-                const page = await this.ruleApi.gets({ offset: existing.length, limit: 500 });
-                existing.push(...page.rules);
-                if (existing.length >= page.total || page.rules.length === 0) break;
-            }
+            const existing = await this.loadAllRules();
             for (const item of this.items)
                 for (const choice of item.choices) {
                     if (!choice.selected || (choice.result && choice.result !== 'failed')) continue;
@@ -318,6 +326,15 @@ export default class BangumiQuarterImport extends Vue {
             new Date(timestamp),
         );
     }
+    private async loadAllRules(): Promise<apid.Rule[]> {
+        const rules: apid.Rule[] = [];
+        for (;;) {
+            const page = await this.ruleApi.gets({ offset: rules.length, limit: 500 });
+            rules.push(...page.rules);
+            if (rules.length >= page.total || page.rules.length === 0) break;
+        }
+        return rules;
+    }
     public directoryRule(value: string): true | string {
         return isValidDirectory(value) || '保存先は空欄・絶対パス・親ディレクトリ参照を使えません';
     }
@@ -346,12 +363,19 @@ export default class BangumiQuarterImport extends Vue {
 .subject-row + .subject-row {
     border-top: 1px solid rgba(128, 128, 128, 0.3);
 }
+.subject-row {
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+}
 .subject-details {
     min-width: 0;
     overflow-wrap: anywhere;
 }
 .choice-row {
-    margin-left: 12px;
+    margin: 2px 0 0 8px;
+}
+.candidate-checkbox {
+    min-height: 30px;
 }
 .choice-detail {
     margin-left: 32px;
@@ -386,8 +410,8 @@ export default class BangumiQuarterImport extends Vue {
     gap: 12px 20px;
 }
 .cover {
-    width: 60px;
-    height: 84px;
+    width: 44px;
+    height: 62px;
     flex: none;
     display: flex;
     align-items: center;

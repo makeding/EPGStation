@@ -128,6 +128,24 @@
                             </SearchOptionRow>
                         </v-expansion-panel-content>
                     </v-expansion-panel>
+                    <v-expansion-panel>
+                        <v-expansion-panel-header>Bangumi</v-expansion-panel-header>
+                        <v-expansion-panel-content>
+                            <SearchOptionRow>
+                                <v-text-field
+                                    :value="searchState.bangumiId == null ? '' : searchState.bangumiId"
+                                    label="Bgm ID"
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    clearable
+                                    hint="空欄にして更新すると Bangumi との関連付けを解除します。"
+                                    persistent-hint
+                                    v-on:input="setBangumiId"
+                                ></v-text-field>
+                            </SearchOptionRow>
+                        </v-expansion-panel-content>
+                    </v-expansion-panel>
                 </v-expansion-panels>
             </div>
             <v-divider></v-divider>
@@ -165,6 +183,15 @@ export default class SearchRuleOption extends Vue {
 
     public onClickUpdate(): void {
         this.$emit('update');
+    }
+
+    public setBangumiId(value: string | number | null): void {
+        if (value === '' || value === null || typeof value === 'undefined') {
+            this.searchState.bangumiId = null;
+            return;
+        }
+        const id = Number(value);
+        this.searchState.bangumiId = Number.isSafeInteger(id) && id > 0 ? id : null;
     }
 }
 </script>

@@ -60,7 +60,7 @@ export default class SearchState implements ISearchState {
     private rangeTimeItems: SelectorItem[] = [];
 
     private ruleId: apid.RuleId | null = null;
-    private bangumiId: number | undefined;
+    public bangumiId: number | null | undefined;
 
     private searchResult: SearchResultItem[] | null = null;
     private reservesResult: apid.ReserveItem[] | null = null;

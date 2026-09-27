@@ -266,7 +266,7 @@ export interface RuleKeywordInfo {
  */
 export interface AddRuleOption {
     isTimeSpecification: boolean;
-    bangumiId?: number;
+    bangumiId?: number | null;
     searchOption: RuleSearchOption;
     reserveOption: RuleReserveOption;
     saveOption?: ReserveSaveOption;

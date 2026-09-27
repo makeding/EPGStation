@@ -194,6 +194,7 @@ export interface QuerySearchOption {
 }
 
 export default interface ISearchState {
+    bangumiId: number | null | undefined;
     isTimeSpecification: boolean;
     searchOption: SearchOption | null;
     timeReserveOption: TimeReserveOption | null;

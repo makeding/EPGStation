@@ -144,7 +144,8 @@ export function isBsChannel(channel) {
     return type.startsWith('BS') || code.startsWith('BS') || /^ＢＳ/.test(name) || /[^Ａ-Ｚ]ＢＳ/.test(name) || /^BS/.test(name) || /[^A-Z]BS/.test(name);
 }
 
-export function defaultCandidateIndices(groups, channels) {
+export function defaultCandidateIndices(groups, channels, alreadyLinked = false) {
+    if (alreadyLinked) return [];
     const terrestrial = groups.map((candidate, index) => {
         const channel = channels.get(candidate.channelId);
         const name = String(channel?.name || '').normalize('NFKC').toUpperCase();
