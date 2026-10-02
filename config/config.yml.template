@@ -81,6 +81,8 @@ encode:
 
 # 録画通知設定
 # notification:
+#     # 録画開始 n 分前通知 (`recordingPreStart`) の分数。省略時は 15
+#     # preNotifyMinutes: 15
 #     telegram:
 #         - name: finish-message
 #           trigger: recordingFinish
@@ -91,6 +93,15 @@ encode:
 #               番組: {{name}}
 #               放送局: {{channelName}}
 #               Drop: {{dropCnt}} / Error: {{errorCnt}}
+#         - name: prestart-message
+#           trigger: recordingPreStart
+#           botToken: '123456789:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+#           chatId: '123456789'
+#           messageTemplate: |-
+#               録画開始まで約 {{minutesUntilStart}} 分
+#               番組: {{name}}
+#               放送局: {{channelName}}
+#               時刻: {{startAtFormat}}
 #         - name: storage-message
 #           trigger: storageWarning
 #           botToken: '123456789:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'

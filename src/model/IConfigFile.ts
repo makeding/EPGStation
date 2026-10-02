@@ -38,7 +38,14 @@ export interface KodiInfo {
     password?: string;
 }
 
-export type NotificationEvent = 'recordingStart' | 'recordingFinish' | 'recordingFailed' | 'storageWarning';
+export type NotificationEvent =
+    | 'recordingPreStart'
+    | 'recordingStart'
+    | 'recordingFinish'
+    | 'recordingFailed'
+    | 'recordingPrepFailed'
+    | 'recordingRetryOver'
+    | 'storageWarning';
 export type NotificationTrigger = NotificationEvent | NotificationEvent[];
 
 export type StorageWarningLevel = 'warning' | 'critical' | 'limit';
@@ -77,6 +84,8 @@ export interface NotificationWebhookConfig {
 }
 
 export interface NotificationConfig {
+    // 録画開始 n 分前通知の時間 (分)。0 以下なら通知しない。デフォルト 15
+    preNotifyMinutes?: number;
     telegram?: NotificationTelegramConfig[];
     webhooks?: NotificationWebhookConfig[];
 }

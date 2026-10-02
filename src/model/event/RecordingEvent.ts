@@ -41,6 +41,14 @@ class RecordingEvent implements IRecordingEvent {
     }
 
     /**
+     * 録画開始前通知イベント発行
+     * @param reserve: Reserve
+     */
+    public emitRecordingPreStart(reserve: Reserve): void {
+        this.emitter.emit(RecordingEvent.RECORDING_PRE_START_EVENT, reserve);
+    }
+
+    /**
      * 録画開始イベント発行
      * @param reserve: Reserve
      */
@@ -118,6 +126,20 @@ class RecordingEvent implements IRecordingEvent {
      */
     public setPrepRecordingFailed(callback: (reserve: Reserve) => void): void {
         this.emitter.on(RecordingEvent.PREP_RECORDING_FAILED_EVENT, async (reserve: Reserve) => {
+            try {
+                await callback(reserve);
+            } catch (err: any) {
+                this.log.system.error(err);
+            }
+        });
+    }
+
+    /**
+     * 録画開始前通知イベント登録
+     * @param callback: (reserve: Reserve) => void
+     */
+    public setRecordingPreStart(callback: (reserve: Reserve) => void): void {
+        this.emitter.on(RecordingEvent.RECORDING_PRE_START_EVENT, async (reserve: Reserve) => {
             try {
                 await callback(reserve);
             } catch (err: any) {
@@ -214,6 +236,7 @@ namespace RecordingEvent {
     export const START_PREP_RRECORDING_EVENT = 'StartPrepRecording';
     export const CANCEL_PREP_RRECORDING_EVENT = 'CancelPrepRecording';
     export const PREP_RECORDING_FAILED_EVENT = 'PrepRecordingFailed';
+    export const RECORDING_PRE_START_EVENT = 'RecordingPreStartEvent';
     export const START_RECORDING_EVENT = 'StartRecordingEvent';
     export const RECORDING_FAILED_EVENT = 'RecordingFailedEvent';
     export const RECORDING_RETRY_OVER_EVENT = 'RecordingRetryOverEvent';

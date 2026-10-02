@@ -6,6 +6,7 @@ export default interface IRecordingEvent {
     emitStartPrepRecording(reserve: Reserve): void;
     emitCancelPrepRecording(reserve: Reserve): void;
     emitPrepRecordingFailed(reserve: Reserve): void;
+    emitRecordingPreStart(reserve: Reserve): void;
     emitStartRecording(reserve: Reserve, recorded: Recorded): void;
     emitRecordingFailed(reserve: Reserve, recorded: Recorded | null, isRetryable: boolean): void;
     emitRecordingRetryOver(reserve: Reserve): void;
@@ -14,6 +15,7 @@ export default interface IRecordingEvent {
     setStartPrepRecording(callback: (reserve: Reserve) => void): void;
     setCancelPrepRecording(callback: (reserve: Reserve) => void): void;
     setPrepRecordingFailed(callback: (reserve: Reserve) => void): void;
+    setRecordingPreStart(callback: (reserve: Reserve) => void): void;
     setStartRecording(callback: (reserve: Reserve, recorded: Recorded) => void): void;
     setRecordingFailed(callback: (reserve: Reserve, recorded: Recorded | null, isRetryable: boolean) => void): void;
     setRecordingRetryOver(callback: (reserve: Reserve) => void): void;

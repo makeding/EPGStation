@@ -64,6 +64,8 @@ class RecorderModel implements IRecorderModel {
     private videoFileId: apid.VideoFileId | null = null;
     private videoFileFulPath: string | null = null;
     private timerId: NodeJS.Timeout | null = null;
+    private preNotifyTimerId: NodeJS.Timeout | null = null;
+    private preNotifyFiredStartAt: number | null = null;
     private stream: http.IncomingMessage | null = null;
     private passThroughStreamForWrite: stream.PassThrough | null = null;
     private bufferedWriteStream: BufferedWriteStream | null = null;
@@ -168,7 +170,47 @@ class RecorderModel implements IRecorderModel {
             }
         }, time);
 
+        // 録画開始 n 分前通知タイマーをセットする
+        this.setPreNotifyTimer(reserve, now);
+
         return true;
+    }
+
+    /**
+     * 録画開始 n 分前通知のタイマーをセットする
+     * @param reserve: Reserve 予約情報
+     * @param now: 現在時刻
+     */
+    private setPreNotifyTimer(reserve: Reserve, now: number): void {
+        if (this.preNotifyTimerId !== null) {
+            clearTimeout(this.preNotifyTimerId);
+            this.preNotifyTimerId = null;
+        }
+
+        const preNotifyMinutes = this.config.notification?.preNotifyMinutes ?? RecorderModel.PRE_NOTIFY_MINUTES_DEFAULT;
+        if (preNotifyMinutes <= 0) {
+            return;
+        }
+
+        // 同じ開始時刻ですでに通知済みの場合は再セットしない
+        if (this.preNotifyFiredStartAt === reserve.startAt) {
+            return;
+        }
+
+        const preNotifyTime = reserve.startAt - now - preNotifyMinutes * 60 * 1000;
+        if (preNotifyTime <= 0) {
+            // 通知時刻がすでに経過している場合は何もしない
+            return;
+        }
+
+        this.preNotifyTimerId = setTimeout(() => {
+            this.preNotifyTimerId = null;
+            this.preNotifyFiredStartAt = this.reserve.startAt;
+            if (this.isPrepRecording === false && this.isRecording === false) {
+                this.log.system.info(`recording pre start notify: ${this.reserve.id}`);
+                this.recordingEvent.emitRecordingPreStart(this.reserve);
+            }
+        }, preNotifyTime);
     }
 
     /**
@@ -201,9 +243,12 @@ class RecorderModel implements IRecorderModel {
                 const program = await this.programDB.findId(this.reserve.programId);
                 if (program === null) {
                     this.log.system.warn(
-                        `the program data does not found in database. retry later, (reerveId: ${this.reserve.id}, programId: ${this.reserve.programId})`,
+                        `the program data does not found in database. (reerveId: ${this.reserve.id}, programId: ${this.reserve.programId})`,
                     );
-                    this.emitCancelEvent();
+                    // 番組データが消滅しているため録画を中止し、予約削除とともに通知する
+                    this.isPrepRecording = false;
+                    this.recordingEvent.emitPrepRecordingFailed(this.reserve);
+
                     return;
                 }
             }
@@ -1477,6 +1522,12 @@ class RecorderModel implements IRecorderModel {
             `recording cancel reserveId: ${this.reserve.id}, recordedId: ${this.recordedId}, isPlanToDelete: ${isPlanToDelete}`,
         );
 
+        // 録画開始前通知タイマーをクリア
+        if (this.preNotifyTimerId !== null) {
+            clearTimeout(this.preNotifyTimerId);
+            this.preNotifyTimerId = null;
+        }
+
         this.isPlanToDelete = isPlanToDelete;
 
         if (this.isPrepRecording === true) {
@@ -1724,6 +1775,7 @@ namespace RecorderModel {
     export const START_RECORDING_EVENT = 'StartRecordingEvent';
     export const EVENT_RELAY_CHECK_TIME = 20 * 1000; // イベントリレーの確認時間 20秒
     export const PREP_RETRY_LIMIT = 30;
+    export const PRE_NOTIFY_MINUTES_DEFAULT = 15; // 録画開始前通知のデフォルト分数
 }
 
 export default RecorderModel;

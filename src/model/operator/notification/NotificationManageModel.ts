@@ -2,6 +2,7 @@ import axios, { AxiosError } from 'axios';
 import { inject, injectable } from 'inversify';
 import * as path from 'path';
 import Recorded from '../../../db/entities/Recorded';
+import Reserve from '../../../db/entities/Reserve';
 import IVideoUtil from '../../api/video/IVideoUtil';
 import IChannelDB from '../../db/IChannelDB';
 import IConfigFile, {
@@ -19,46 +20,52 @@ import INotificationManageModel from './INotificationManageModel';
 
 type TemplateValue = string | number | boolean | null;
 
+// Recorded (録画ファイル) が紐づく通知イベント
+type RecordedNotificationEvent = 'recordingStart' | 'recordingFinish' | 'recordingFailed';
+
+// Reserve (予約情報) のみで通知するイベント
+type ReserveNotificationEvent = 'recordingPreStart' | 'recordingPrepFailed' | 'recordingRetryOver';
+
 interface NotificationContext {
     event: NotificationEvent;
     values: { [key: string]: TemplateValue };
     payload:
         | {
-        event: NotificationEvent;
-        recorded: {
-            id: number;
-            reserveId: number | null;
-            ruleId: number | null;
-            programId: number | null;
-            channelId: number;
-            channelType: string | null;
-            channelName: string | null;
-            halfWidthChannelName: string | null;
-            startAt: number;
-            endAt: number;
-            duration: number;
-            name: string;
-            halfWidthName: string;
-            description: string | null;
-            halfWidthDescription: string | null;
-            extended: string | null;
-            halfWidthExtended: string | null;
-            recPath: string | null;
-            recRelativePath: string | null;
-            recParentDirectoryName: string | null;
-            logPath: string | null;
-            errorCnt: number | null;
-            dropCnt: number | null;
-            scramblingCnt: number | null;
-        };
-        videoFile: {
-            id: number;
-            parentDirectoryName: string;
-            filePath: string;
-            name: string;
-            type: string;
-            size: number;
-        } | null;
+              event: RecordedNotificationEvent;
+              recorded: {
+                  id: number;
+                  reserveId: number | null;
+                  ruleId: number | null;
+                  programId: number | null;
+                  channelId: number;
+                  channelType: string | null;
+                  channelName: string | null;
+                  halfWidthChannelName: string | null;
+                  startAt: number;
+                  endAt: number;
+                  duration: number;
+                  name: string;
+                  halfWidthName: string;
+                  description: string | null;
+                  halfWidthDescription: string | null;
+                  extended: string | null;
+                  halfWidthExtended: string | null;
+                  recPath: string | null;
+                  recRelativePath: string | null;
+                  recParentDirectoryName: string | null;
+                  logPath: string | null;
+                  errorCnt: number | null;
+                  dropCnt: number | null;
+                  scramblingCnt: number | null;
+              };
+              videoFile: {
+                  id: number;
+                  parentDirectoryName: string;
+                  filePath: string;
+                  name: string;
+                  type: string;
+                  size: number;
+              } | null;
           }
         | {
               event: 'storageWarning';
@@ -68,6 +75,28 @@ interface NotificationContext {
                   path: string;
                   free: number;
                   threshold: number;
+              };
+          }
+        | {
+              event: ReserveNotificationEvent;
+              reserve: {
+                  reserveId: number;
+                  ruleId: number | null;
+                  programId: number | null;
+                  isTimeSpecified: boolean;
+                  channelId: number;
+                  channelType: string | null;
+                  channelName: string | null;
+                  halfWidthChannelName: string | null;
+                  startAt: number;
+                  endAt: number;
+                  duration: number;
+                  name: string | null;
+                  halfWidthName: string | null;
+                  description: string | null;
+                  halfWidthDescription: string | null;
+                  extended: string | null;
+                  halfWidthExtended: string | null;
               };
           };
 }
@@ -106,6 +135,18 @@ export default class NotificationManageModel implements INotificationManageModel
         this.addRecorded('recordingFailed', recorded);
     }
 
+    public addRecordingPreStart(reserve: Reserve): void {
+        this.addReserve('recordingPreStart', reserve);
+    }
+
+    public addRecordingPrepFailed(reserve: Reserve): void {
+        this.addReserve('recordingPrepFailed', reserve);
+    }
+
+    public addRecordingRetryOver(reserve: Reserve): void {
+        this.addReserve('recordingRetryOver', reserve);
+    }
+
     public addStorageWarning(warning: StorageWarning): void {
         if (this.isEnabled('storageWarning') === false) {
             return;
@@ -119,13 +160,26 @@ export default class NotificationManageModel implements INotificationManageModel
         });
     }
 
-    private addRecorded(event: NotificationEvent, recorded: Recorded): void {
+    private addRecorded(event: RecordedNotificationEvent, recorded: Recorded): void {
         if (this.isEnabled(event) === false) {
             return;
         }
 
         this.queue.add<void>(() => {
             return this.notify(event, recorded).catch(err => {
+                this.log.system.error(`notification error: ${event}`);
+                this.log.system.error(err);
+            });
+        });
+    }
+
+    private addReserve(event: ReserveNotificationEvent, reserve: Reserve): void {
+        if (this.isEnabled(event) === false) {
+            return;
+        }
+
+        this.queue.add<void>(() => {
+            return this.notifyReserve(event, reserve).catch(err => {
                 this.log.system.error(`notification error: ${event}`);
                 this.log.system.error(err);
             });
@@ -147,8 +201,13 @@ export default class NotificationManageModel implements INotificationManageModel
         );
     }
 
-    private async notify(event: NotificationEvent, recorded: Recorded): Promise<void> {
+    private async notify(event: RecordedNotificationEvent, recorded: Recorded): Promise<void> {
         const context = await this.createContext(event, recorded);
+        await this.send(context);
+    }
+
+    private async notifyReserve(event: ReserveNotificationEvent, reserve: Reserve): Promise<void> {
+        const context = await this.createReserveContext(event, reserve);
         await this.send(context);
     }
 
@@ -206,7 +265,7 @@ export default class NotificationManageModel implements INotificationManageModel
         return trigger === event;
     }
 
-    private async createContext(event: NotificationEvent, recorded: Recorded): Promise<NotificationContext> {
+    private async createContext(event: RecordedNotificationEvent, recorded: Recorded): Promise<NotificationContext> {
         const channel = await this.channelDB.findId(recorded.channelId);
         const videoFile =
             typeof recorded.videoFiles !== 'undefined' && recorded.videoFiles.length > 0
@@ -230,6 +289,9 @@ export default class NotificationManageModel implements INotificationManageModel
         const errorCnt = recorded.dropLogFile?.errorCnt ?? null;
         const dropCnt = recorded.dropLogFile?.dropCnt ?? null;
         const scramblingCnt = recorded.dropLogFile?.scramblingCnt ?? null;
+        const startAtFormat = this.formatDate(recorded.startAt);
+        const endAtFormat = this.formatDate(recorded.endAt);
+        const minutesUntilStart = Math.max(0, Math.round((recorded.startAt - new Date().getTime()) / 60000));
 
         const values: { [key: string]: TemplateValue } = {
             EVENT: event,
@@ -243,6 +305,9 @@ export default class NotificationManageModel implements INotificationManageModel
             HALF_WIDTH_CHANNELNAME: halfWidthChannelName,
             STARTAT: recorded.startAt,
             ENDAT: recorded.endAt,
+            STARTAT_FORMAT: startAtFormat,
+            ENDAT_FORMAT: endAtFormat,
+            MINUTES_UNTIL_START: minutesUntilStart,
             DURATION: recorded.duration,
             NAME: recorded.name,
             HALF_WIDTH_NAME: recorded.halfWidthName,
@@ -272,6 +337,9 @@ export default class NotificationManageModel implements INotificationManageModel
             halfWidthChannelName,
             startAt: recorded.startAt,
             endAt: recorded.endAt,
+            startAtFormat,
+            endAtFormat,
+            minutesUntilStart,
             duration: recorded.duration,
             name: recorded.name,
             halfWidthName: recorded.halfWidthName,
@@ -334,6 +402,95 @@ export default class NotificationManageModel implements INotificationManageModel
                               type: videoFile.type,
                               size: videoFile.size,
                           },
+            },
+        };
+    }
+
+    private async createReserveContext(
+        event: ReserveNotificationEvent,
+        reserve: Reserve,
+    ): Promise<NotificationContext> {
+        const channel = await this.channelDB.findId(reserve.channelId);
+        const channelType = channel === null ? reserve.channelType : channel.channelType;
+        const channelName = channel === null ? null : channel.name;
+        const halfWidthChannelName = channel === null ? null : channel.halfWidthName;
+        const description = typeof reserve.description === 'undefined' ? null : reserve.description;
+        const halfWidthDescription =
+            typeof reserve.halfWidthDescription === 'undefined' ? null : reserve.halfWidthDescription;
+        const extended = typeof reserve.extended === 'undefined' ? null : reserve.extended;
+        const halfWidthExtended = typeof reserve.halfWidthExtended === 'undefined' ? null : reserve.halfWidthExtended;
+        const startAtFormat = this.formatDate(reserve.startAt);
+        const endAtFormat = this.formatDate(reserve.endAt);
+        const minutesUntilStart = Math.max(0, Math.round((reserve.startAt - new Date().getTime()) / 60000));
+
+        const values: { [key: string]: TemplateValue } = {
+            EVENT: event,
+            RESERVEID: reserve.id,
+            RULEID: reserve.ruleId,
+            PROGRAMID: reserve.programId,
+            CHANNELID: reserve.channelId,
+            CHANNELTYPE: channelType,
+            CHANNELNAME: channelName,
+            HALF_WIDTH_CHANNELNAME: halfWidthChannelName,
+            STARTAT: reserve.startAt,
+            ENDAT: reserve.endAt,
+            STARTAT_FORMAT: startAtFormat,
+            ENDAT_FORMAT: endAtFormat,
+            MINUTES_UNTIL_START: minutesUntilStart,
+            DURATION: reserve.endAt - reserve.startAt,
+            NAME: reserve.name,
+            HALF_WIDTH_NAME: reserve.halfWidthName,
+            DESCRIPTION: description,
+            HALF_WIDTH_DESCRIPTION: halfWidthDescription,
+            EXTENDED: extended,
+            HALF_WIDTH_EXTENDED: halfWidthExtended,
+            event,
+            reserveId: reserve.id,
+            ruleId: reserve.ruleId,
+            programId: reserve.programId,
+            isTimeSpecified: reserve.isTimeSpecified,
+            channelId: reserve.channelId,
+            channelType,
+            channelName,
+            halfWidthChannelName,
+            startAt: reserve.startAt,
+            endAt: reserve.endAt,
+            startAtFormat,
+            endAtFormat,
+            minutesUntilStart,
+            duration: reserve.endAt - reserve.startAt,
+            name: reserve.name,
+            halfWidthName: reserve.halfWidthName,
+            description,
+            halfWidthDescription,
+            extended,
+            halfWidthExtended,
+        };
+
+        return {
+            event,
+            values,
+            payload: {
+                event,
+                reserve: {
+                    reserveId: reserve.id,
+                    ruleId: reserve.ruleId,
+                    programId: reserve.programId,
+                    isTimeSpecified: reserve.isTimeSpecified,
+                    channelId: reserve.channelId,
+                    channelType,
+                    channelName,
+                    halfWidthChannelName,
+                    startAt: reserve.startAt,
+                    endAt: reserve.endAt,
+                    duration: reserve.endAt - reserve.startAt,
+                    name: reserve.name,
+                    halfWidthName: reserve.halfWidthName,
+                    description,
+                    halfWidthDescription,
+                    extended,
+                    halfWidthExtended,
+                },
             },
         };
     }
@@ -510,6 +667,7 @@ export default class NotificationManageModel implements INotificationManageModel
         const endAt = context.values.endAt;
         const dropCnt = context.values.dropCnt;
         const errorCnt = context.values.errorCnt;
+        const minutesUntilStart = context.values.minutesUntilStart;
         const lines = [
             title,
             `番組: ${name}`,
@@ -521,6 +679,14 @@ export default class NotificationManageModel implements INotificationManageModel
 
         if (dropCnt !== null || errorCnt !== null) {
             lines.push(`Drop: ${dropCnt ?? 0} / Error: ${errorCnt ?? 0}`);
+        }
+
+        if (context.event === 'recordingPreStart') {
+            lines.push(`開始まで約 ${minutesUntilStart ?? 0} 分です`);
+        } else if (context.event === 'recordingPrepFailed') {
+            lines.push('録画を開始できなかったため予約を削除しました');
+        } else if (context.event === 'recordingRetryOver') {
+            lines.push('録画のリトライが上限に達したため予約を削除しました');
         }
 
         return lines.join('\n');
@@ -538,12 +704,18 @@ export default class NotificationManageModel implements INotificationManageModel
 
     private createDefaultTitle(event: NotificationEvent): string {
         switch (event) {
+            case 'recordingPreStart':
+                return '録画開始が近づいています';
             case 'recordingStart':
                 return '録画を開始しました';
             case 'recordingFailed':
                 return '録画に失敗しました';
             case 'recordingFinish':
                 return '録画が完了しました';
+            case 'recordingPrepFailed':
+                return '録画を開始できませんでした';
+            case 'recordingRetryOver':
+                return '録画のリトライ上限に達しました';
             case 'storageWarning':
                 return 'ストレージの空き容量が低下しました';
         }

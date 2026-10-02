@@ -28,9 +28,7 @@
                 <v-col cols="12" sm="3"><v-btn color="primary" block :loading="scanning" :disabled="busy || !user" v-on:click="scan">番組表を照合</v-btn></v-col>
             </v-row>
             <div class="status-slot" role="status" aria-live="polite">{{ status }}</div>
-            <v-alert v-if="restored" type="info" outlined dense class="mb-3">
-                前回の照合結果（{{ restoredInfo }}）を復元しました。必要なら「番組表を照合」で取り直せます。
-            </v-alert>
+            <v-alert v-if="restored" type="info" outlined dense class="mb-3">前回の照合結果（{{ restoredInfo }}）を復元しました。必要なら「番組表を照合」で取り直せます。</v-alert>
             <v-alert v-if="error" type="error" outlined dense>
                 {{ error }}
                 <span>アカウント名と通信状態を確認し、再度照合してください。</span>

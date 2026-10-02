@@ -156,9 +156,15 @@ export default class EventSetter implements IEventSetter {
             this.externalCommandManage.addRecordingPrepRecFailedCmd(reserve);
         });
 
+        // 録画開始 n 分前通知イベント
+        this.recordingEvent.setRecordingPreStart(reserve => {
+            this.notificationManage.addRecordingPreStart(reserve);
+        });
+
         // 録画準備失敗イベント
         this.recordingEvent.setPrepRecordingFailed(reserve => {
             this.ipc.notifyClient();
+            this.notificationManage.addRecordingPrepFailed(reserve);
             this.reservationManage.cancel(reserve.id); // 予約から削除
             this.externalCommandManage.addRecordingPrepRecFailedCmd(reserve);
         });
@@ -189,6 +195,7 @@ export default class EventSetter implements IEventSetter {
 
         // 録画リトライオーバーイベント
         this.recordingEvent.setRecordingRetryOver(reserve => {
+            this.notificationManage.addRecordingRetryOver(reserve);
             // 予約から削除
             this.reservationManage.cancel(reserve.id).catch(() => {});
         });
