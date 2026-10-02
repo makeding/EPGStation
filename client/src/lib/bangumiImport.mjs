@@ -8,6 +8,22 @@ export function nextQuarter(now = new Date()) {
     return quarter === 4 ? `${year + 1}-01` : `${year}-${String(quarter * 3 + 1).padStart(2, '0')}`;
 }
 
+export function currentQuarter(now = new Date()) {
+    const quarter = Math.floor(now.getMonth() / 3) + 1;
+    return quarter === 4 ? `${now.getFullYear()}-10` : `${now.getFullYear()}-${String(quarter * 3 - 2).padStart(2, '0')}`;
+}
+
+// The guide only carries the next season about 8 days ahead (from Dec 24 the
+// January programs gradually appear), so keep the running quarter as default
+// until then instead of jumping straight to the next calendar quarter.
+const NEXT_QUARTER_EPG_LEAD_MS = 8 * 24 * 3600 * 1000;
+
+export function defaultQuarter(now = new Date()) {
+    const [year, month] = nextQuarter(now).split('-').map(Number);
+    const available = new Date(year, month - 1, 1).getTime();
+    return available - now.getTime() <= NEXT_QUARTER_EPG_LEAD_MS ? nextQuarter(now) : currentQuarter(now);
+}
+
 export function quarterMonths(month) {
     if (!/^\d{4}-(01|04|07|10)$/.test(month)) throw new Error('四半期を選択してください');
     const [year, start] = month.split('-').map(Number);

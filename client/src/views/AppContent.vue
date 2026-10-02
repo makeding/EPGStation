@@ -67,6 +67,20 @@ export default class AppContent extends Vue {
         // イベント設定
         io.on('disconnect', this.onDisconnect);
         io.on('connect', this.onReconnect);
+        document.addEventListener('visibilitychange', this.onVisibilityChange);
+    }
+
+    /**
+     * ページを再表示したとき、切れた socket.io をすぐ繋ぎ直す
+     */
+    private onVisibilityChange(): void {
+        const io = this.socketIoModel.getIO();
+        if (io === null || document.visibilityState !== 'visible' || io.disconnected === false) {
+            return;
+        }
+
+        // 裏回しだと通信断の検出や再接続が遅れるので、表示に戻った時点で再接続する
+        io.connect();
     }
 
     /**
@@ -110,12 +124,14 @@ export default class AppContent extends Vue {
     public destroyed(): void {
         const io = this.socketIoModel.getIO();
         if (io === null) {
+            document.removeEventListener('visibilitychange', this.onVisibilityChange);
             return;
         }
 
         // イベント削除
         io.off('disconnect', this.onDisconnect);
-        io.off('reconnect', this.onReconnect);
+        io.off('connect', this.onReconnect);
+        document.removeEventListener('visibilitychange', this.onVisibilityChange);
     }
 
     /**

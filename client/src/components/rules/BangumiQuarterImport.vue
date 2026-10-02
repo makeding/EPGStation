@@ -2,13 +2,35 @@
     <v-card outlined class="mb-5">
         <v-card-title>Bangumi 四半期作品からルールを作成</v-card-title>
         <v-card-text>
-            <p>「見てる」のアニメを番組表と照合します。確認するまでルールは作成されません。アカウント名はこのブラウザに保存します。</p>
+            <p class="mb-2">
+                「見てる」に追加したアニメを、対象四半期の番組表と自動的に照合します。放送予定が見つかった作品は一覧に並ぶので、
+                中身を確認・調整してそのまま録画ルールとしてまとめて登録できます。
+            </p>
+            <ul class="help-note mb-3">
+                <li>候補は MBS/TBS などの地上波を優先して選択し、地上波がなければ BS 放送を初期選択します。保存先は候補ごとに編集してリセットできます。</li>
+                <li>照合しただけでは何も作成されません。「作成」ボタンで選択したルールだけを確定します。登録済みの作品は上書きしません。</li>
+                <li>Bangumi アカウント名はサーバーに保存されません。照合はこのブラウザから直接 Bangumi API へ行い、アカウント名はブラウザの中だけで使います。</li>
+                <li>次の四半期の番組は季節の始まり約 8 日前から番組表に載り始めます。既定ではその時期から対象四半期を新シーズンへ切り替えます。</li>
+            </ul>
             <v-row align="center">
                 <v-col cols="12" sm="5"><v-text-field v-model.trim="user" label="Bangumi アカウント" :disabled="busy" hide-details="auto"></v-text-field></v-col>
-                <v-col cols="12" sm="4"><v-select v-model="quarter" :items="quarters" label="対象四半期" :disabled="busy" hide-details="auto"></v-select></v-col>
+                <v-col cols="12" sm="4">
+                    <v-select
+                        v-model="quarter"
+                        :items="quarters"
+                        label="対象四半期"
+                        :disabled="busy"
+                        hide-details="auto"
+                        hint="変えると照合結果をいったん消します"
+                        persistent-hint
+                    ></v-select>
+                </v-col>
                 <v-col cols="12" sm="3"><v-btn color="primary" block :loading="scanning" :disabled="busy || !user" v-on:click="scan">番組表を照合</v-btn></v-col>
             </v-row>
             <div class="status-slot" role="status" aria-live="polite">{{ status }}</div>
+            <v-alert v-if="restored" type="info" outlined dense class="mb-3">
+                前回の照合結果（{{ restoredInfo }}）を復元しました。必要なら「番組表を照合」で取り直せます。
+            </v-alert>
             <v-alert v-if="error" type="error" outlined dense>
                 {{ error }}
                 <span>アカウント名と通信状態を確認し、再度照合してください。</span>
@@ -18,7 +40,7 @@
                 <div v-for="item in items" :key="item.subject.id" :ref="`subject-${item.subject.id}`" class="subject-row py-2" tabindex="-1">
                     <v-expansion-panels v-model="item.openPanel" accordion flat class="subject-collapse">
                         <v-expansion-panel>
-                            <v-expansion-panel-header :disabled="busy">
+                            <v-expansion-panel-header :disabled="saving">
                                 <div class="d-flex align-center">
                                     <div class="cover mr-3">
                                         <img
@@ -39,10 +61,16 @@
                                         </div>
                                         <div class="caption">
                                             放送開始: {{ item.subject.date || '日付不明' }}
-                                            <v-chip v-if="item.alreadyLinked" x-small outlined class="ml-1">ルール登録済み</v-chip>
-                                            <span v-if="item.alreadyLinked && item.choices.length" class="ml-1">候補 {{ item.choices.length }} 件</span>
-                                            <span v-if="item.alreadyLinked && item.choices.length" class="ml-1">（展開して確認）</span>
+                                            <v-chip v-if="item.alreadyLinked" x-small color="primary" outlined class="ml-1">ルール登録済み</v-chip>
+                                            <v-chip v-if="item.alreadyLinked" x-small outlined :color="item.linkedReserves === 0 ? 'warning' : undefined" class="ml-1">
+                                                予約件数 {{ item.linkedReserves === null ? '?' : item.linkedReserves }}
+                                            </v-chip>
+                                            <v-chip v-if="!item.alreadyLinked && item.choices.length" x-small outlined class="ml-1">候補 {{ item.choices.length }} 件</v-chip>
+                                            <v-chip v-if="!item.alreadyLinked && !item.choices.length && item.reason" x-small outlined color="warning" class="ml-1">要確認</v-chip>
                                             <span v-if="item.reason">— {{ item.reason }}</span>
+                                        </div>
+                                        <div v-if="item.alreadyLinked && item.linkedReserves === 0" class="caption warning--text">
+                                            登録済みのルールに現在一致する放送予定がありません。展開して候補を確認・再作成できます。
                                         </div>
                                     </div>
                                 </div>
@@ -103,7 +131,7 @@
 </template>
 
 <script lang="ts">
-import { Component, Vue } from 'vue-property-decorator';
+import { Component, Vue, Watch } from 'vue-property-decorator';
 import * as apid from '../../../../api';
 import container from '@/model/ModelContainer';
 import IRuleApiModel from '@/model/api/rule/IRuleApiModel';
@@ -116,11 +144,11 @@ import {
     candidateGroups,
     createRule,
     defaultCandidateIndices,
+    defaultQuarter,
     fetchBangumiWatching,
     filterQuarter,
     hasDuplicateRule,
     isValidDirectory,
-    nextQuarter,
     quarterLabel,
     resolveRomaji,
     scanWithConcurrency,
@@ -144,13 +172,26 @@ interface Item {
     lookupFailed: boolean;
     searching: boolean;
     alreadyLinked: boolean;
+    linkedReserves: number | null;
     openPanel: number | null;
 }
+
+// The scan is slow and expensive, so keep its result while the user walks to
+// another page and back. Restored results re-check the linked rule state.
+interface ScanCache {
+    user: string;
+    quarter: string;
+    savedAt: number;
+    items: Item[];
+}
+let scanCache: ScanCache | null = null;
 
 @Component
 export default class BangumiQuarterImport extends Vue {
     public user = '';
-    public quarter = nextQuarter();
+    public quarter = defaultQuarter();
+    public restored = false;
+    public restoredInfo = '';
     public scanning = false;
     public saving = false;
     public status = '';
@@ -158,8 +199,10 @@ export default class BangumiQuarterImport extends Vue {
     public items: Item[] = [];
     public retrying = 0;
     public confirmCount = 0;
+    private restoring = false;
     private channels = new Map<number, apid.ChannelItem>();
     private existingBangumiIds = new Set<number>();
+    private linkedRules = new Map<number, apid.Rule>();
 
     private ruleApi = container.get<IRuleApiModel>('IRuleApiModel');
     private scheduleApi = container.get<IScheduleApiModel>('IScheduleApiModel');
@@ -186,17 +229,48 @@ export default class BangumiQuarterImport extends Vue {
 
     public created(): void {
         this.user = this.storage.get('bangumi-quarter-user') || '';
+        this.restore();
+        if (this.restored) {
+            void this.refreshLinkedRules().catch(() => {
+                // Cached linked counts stay visible even while offline.
+            });
+        }
+    }
+
+    @Watch('items', { deep: true })
+    public onItemsChanged(): void {
+        if (!this.restoring) this.persist();
+    }
+
+    @Watch('quarter')
+    public onQuarterChanged(): void {
+        this.items = [];
+        this.restored = false;
+        this.restoredInfo = '';
+        this.error = '';
+        this.status = '';
+    }
+
+    @Watch('user')
+    public onUserChanged(): void {
+        if (this.restored) {
+            const cached = scanCache;
+            if (cached !== null && cached.user !== this.user) {
+                this.restored = false;
+            }
+        }
     }
 
     public async scan(): Promise<void> {
         if (this.busy || !this.user) return;
         this.scanning = true;
+        this.restored = false;
+        this.restoredInfo = '';
         this.error = '';
         this.items = [];
         this.status = '既存ルールを確認しています…';
         try {
-            const existing = await this.loadAllRules();
-            this.existingBangumiIds = new Set(existing.map(rule => rule.bangumiId).filter((id): id is number => typeof id === 'number'));
+            await this.refreshLinkedRules();
             this.status = 'Bangumi の作品を取得しています…';
             const subjects = filterQuarter(await fetchBangumiWatching(this.user), this.quarter);
             this.storage.set('bangumi-quarter-user', this.user);
@@ -231,7 +305,9 @@ export default class BangumiQuarterImport extends Vue {
         item.reason = '番組表を再検索しています…';
         try {
             const refreshed = await this.scanSubject(item.subject);
+            const openPanel = item.openPanel;
             Object.assign(item, refreshed);
+            item.openPanel = openPanel;
             if (!item.lookupFailed) {
                 this.$nextTick(() => {
                     const rows = this.$refs[`subject-${item.subject.id}`] as HTMLElement[] | undefined;
@@ -246,7 +322,17 @@ export default class BangumiQuarterImport extends Vue {
 
     private async scanSubject(subject: BangumiSubject): Promise<Item> {
         const alreadyLinked = this.existingBangumiIds.has(subject.id);
-        const item: Item = { subject, keyword: '', reason: '', choices: [], lookupFailed: false, searching: false, alreadyLinked, openPanel: alreadyLinked ? null : 0 };
+        const item: Item = {
+            subject,
+            keyword: '',
+            reason: '',
+            choices: [],
+            lookupFailed: false,
+            searching: false,
+            alreadyLinked,
+            linkedReserves: this.linkedRules.get(subject.id)?.reservesCnt ?? null,
+            openPanel: null,
+        };
         if (!subject.date) {
             item.reason = '放送開始日が不明のため自動選択しません';
             return item;
@@ -300,6 +386,7 @@ export default class BangumiQuarterImport extends Vue {
         this.status = '選択したルールを作成しています…';
         try {
             const existing = await this.loadAllRules();
+            let created = false;
             for (const item of this.items)
                 for (const choice of item.choices) {
                     if (!choice.selected || (choice.result && choice.result !== 'failed')) continue;
@@ -317,12 +404,20 @@ export default class BangumiQuarterImport extends Vue {
                         existing.push({ id, ...choice.rule });
                         choice.result = 'created';
                         choice.detail = `ルール ID: ${id}`;
+                        created = true;
                         this.$emit('created');
                     } catch (err: any) {
                         choice.result = 'failed';
                         choice.detail = this.message(err);
                     }
                 }
+            if (created) {
+                try {
+                    await this.refreshLinkedRules();
+                } catch {
+                    // 予約件数の再読み込みに失敗しても作成結果は保持する
+                }
+            }
             this.status = '作成結果を表示しています。失敗した項目は再度作成できます。';
         } catch (err: any) {
             this.error = `既存ルールの確認に失敗しました: ${this.message(err)}`;
@@ -345,6 +440,48 @@ export default class BangumiQuarterImport extends Vue {
             if (rules.length >= page.total || page.rules.length === 0) break;
         }
         return rules;
+    }
+    private async refreshLinkedRules(): Promise<void> {
+        this.applyLinkedRules(await this.loadAllRules());
+    }
+    private applyLinkedRules(existing: apid.Rule[]): void {
+        this.linkedRules = new Map(existing.filter(rule => typeof rule.bangumiId === 'number').map(rule => [rule.bangumiId as number, rule]));
+        this.existingBangumiIds = new Set(this.linkedRules.keys());
+        for (const item of this.items) {
+            item.alreadyLinked = this.linkedRules.has(item.subject.id);
+            item.linkedReserves = this.linkedRules.get(item.subject.id)?.reservesCnt ?? null;
+        }
+    }
+    private restore(): void {
+        const cache = scanCache;
+        if (cache === null || cache.items.length === 0 || cache.quarter !== this.quarter || cache.user !== this.user) return;
+        this.restoring = true;
+        try {
+            this.items = cache.items.map(item => JSON.parse(JSON.stringify(item)) as Item);
+            for (const item of this.items) item.searching = false;
+        } finally {
+            this.restoring = false;
+        }
+        this.restored = true;
+        this.restoredInfo = `${this.formatCacheDate(cache.savedAt)} に照合した ${this.items.length} 作品`;
+        this.status = '前回の照合結果を表示しています。番組表を照合で取り直せます。';
+    }
+    private persist(): void {
+        if (this.items.length === 0) {
+            scanCache = null;
+            return;
+        }
+        const user = this.user || '';
+        const keepStamp = scanCache !== null && scanCache.quarter === this.quarter && scanCache.user === user ? scanCache.savedAt : Date.now();
+        scanCache = {
+            user,
+            quarter: this.quarter,
+            savedAt: keepStamp,
+            items: this.items.map(item => JSON.parse(JSON.stringify({ ...item, searching: false })) as Item),
+        };
+    }
+    private formatCacheDate(timestamp: number): string {
+        return new Intl.DateTimeFormat('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(timestamp));
     }
     public directoryRule(value: string): true | string {
         return isValidDirectory(value) || '保存先は空欄・絶対パス・親ディレクトリ参照を使えません';
@@ -374,6 +511,11 @@ export default class BangumiQuarterImport extends Vue {
     min-height: 2.5em;
     padding-top: 8px;
 }
+.help-note {
+    padding-left: 18px;
+    line-height: 1.7;
+    color: rgba(128, 128, 128, 1);
+}
 .subject-row + .subject-row {
     border-top: 1px solid rgba(128, 128, 128, 0.3);
 }
@@ -384,6 +526,9 @@ export default class BangumiQuarterImport extends Vue {
 .subject-details {
     min-width: 0;
     overflow-wrap: anywhere;
+}
+.subject-collapse ::v-deep .v-expansion-panel-content__wrap {
+    padding-top: 0;
 }
 .choice-row {
     margin: 2px 0 0 8px;

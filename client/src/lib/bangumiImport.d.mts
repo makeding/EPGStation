@@ -4,6 +4,8 @@ export interface BangumiSubject { id: number; name: string; nameCn: string; date
 export interface RomajiResult { romaji: string; isRomajiFallback: boolean }
 export interface Candidate { channelId: number; weekday: number; startSeconds: number; program: apid.ScheduleProgramItem; programs: apid.ScheduleProgramItem[] }
 export function nextQuarter(now?: Date): string;
+export function currentQuarter(now?: Date): string;
+export function defaultQuarter(now?: Date): string;
 export function quarterMonths(month: string): string[];
 export function quarterLabel(month: string): string;
 export function fetchBangumiWatching(user: string, request?: typeof fetch): Promise<BangumiSubject[]>;
