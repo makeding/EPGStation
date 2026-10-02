@@ -820,13 +820,14 @@ encodingFinishCommand: '/bin/node /home/hoge/fuga.js finish'
 
 ### notification
 
--   録画開始、録画完了、録画失敗、ストレージ容量警告時に Telegram / Webhook へ通知する設定
+-   録画開始前、録画開始、録画完了、録画失敗、録画準備失敗、録画リトライ上限、ストレージ容量警告時に Telegram / Webhook へ通知する設定
 -   Telegram / Webhook の各項目に `trigger` を指定する
 
-| 子プロパティ名 | 種類   | 必須 | 説明                                        |
-| -------------- | ------ | ---- | ------------------------------------------- |
-| telegram       | array  | no   | Telegram Bot API の送信設定。複数指定可     |
-| webhooks       | array  | no   | Webhook 送信設定。複数指定可                |
+| 子プロパティ名  | 種類   | 必須 | 説明                                                       |
+| --------------- | ------ | ---- | ---------------------------------------------------------- |
+| preNotifyMinutes | number | no   | 録画開始 n 分前の通知 (`recordingPreStart`) に使う分数。0 以下なら通知しない。省略時は 15 |
+| telegram        | array  | no   | Telegram Bot API の送信設定。複数指定可                     |
+| webhooks        | array  | no   | Webhook 送信設定。複数指定可                                |
 
 #### telegram
 
@@ -859,6 +860,7 @@ encodingFinishCommand: '/bin/node /home/hoge/fuga.js finish'
 
 ```yaml
 notification:
+    preNotifyMinutes: 15
     telegram:
         - name: finish-message
           trigger: recordingFinish
@@ -869,6 +871,15 @@ notification:
               番組: {{name}}
               放送局: {{channelName}}
               Drop: {{dropCnt}} / Error: {{errorCnt}}
+        - name: prestart-message
+          trigger: recordingPreStart
+          botToken: '123456789:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+          chatId: '123456789'
+          messageTemplate: |-
+              録画開始まで約 {{minutesUntilStart}} 分です
+              番組: {{name}}
+              放送局: {{channelName}}
+              時刻: {{startAtFormat}}
         - name: start-message
           trigger: recordingStart
           botToken: '123456789:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
@@ -902,11 +913,19 @@ notification:
           bodyTemplate: 'recording finished: %NAME% (%CHANNELNAME%)'
 ```
 
--   `trigger` は `recordingStart`, `recordingFinish`, `recordingFailed`, `storageWarning` のいずれか、または配列で指定する
+-   `trigger` は `recordingPreStart`, `recordingStart`, `recordingFinish`, `recordingFailed`, `recordingPrepFailed`, `recordingRetryOver`, `storageWarning` のいずれか、または配列で指定する
+    -   `recordingPreStart`: 録画開始 n 分前 (`preNotifyMinutes` で設定)
+    -   `recordingStart`: 録画開始直後
+    -   `recordingFinish`: 録画完了
+    -   `recordingFailed`: 録画中のエラー (複数回発生する場合は毎回通知される)
+    -   `recordingPrepFailed`: 録画を開始できずに予約が削除された (tuner 取得失敗, 番組データが消滅, 予約が削除された等)
+    -   `recordingRetryOver`: 録画エラーのリトライが上限に達し予約が削除された
+    -   `storageWarning`: ストレージ空き容量警告
 
 -   `{{name}}` と `%NAME%` のどちらの形式でもテンプレート展開できる
 -   `json` の値全体が `{{recordedId}}` のような単一プレースホルダの場合は number / null を維持する
 -   `json` / `bodyTemplate` を省略した Webhook は、録画情報と先頭 video file 情報を含む JSON を送信する
+-   `recordingPreStart` / `recordingPrepFailed` / `recordingRetryOver` は録画が始まる前のため `recPath`, `dropCnt`, `errorCnt`, `videoFileId` などのプレースホルダは利用できない
 -   ストレージ通知は同じ閾値では一度だけ送信し、容量回復後に再度下回った場合は再送する
 
 利用できる主なプレースホルダ:
@@ -929,6 +948,9 @@ notification:
 | halfWidthChannelName| HALF_WIDTH_CHANNELNAME  | 放送局名(半角)             |
 | startAt             | STARTAT                 | 開始時刻 (UNIX time)       |
 | endAt               | ENDAT                   | 終了時刻 (UNIX time)       |
+| startAtFormat       | STARTAT_FORMAT          | 開始時刻 (書式化された文字列) |
+| endAtFormat         | ENDAT_FORMAT            | 終了時刻 (書式化された文字列) |
+| minutesUntilStart   | MINUTES_UNTIL_START     | 開始時刻までの残り分数     |
 | duration            | DURATION                | 長さ (ms)                  |
 | name                | NAME                    | 番組名                     |
 | halfWidthName       | HALF_WIDTH_NAME         | 番組名(半角)               |

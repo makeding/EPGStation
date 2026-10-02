@@ -7,23 +7,12 @@
                 中身を確認・調整してそのまま録画ルールとしてまとめて登録できます。
             </p>
             <ul class="help-note mb-3">
-                <li>候補は MBS/TBS などの地上波を優先して選択し、地上波がなければ BS 放送を初期選択します。保存先は候補ごとに編集してリセットできます。</li>
                 <li>照合しただけでは何も作成されません。「作成」ボタンで選択したルールだけを確定します。登録済みの作品は上書きしません。</li>
-                <li>Bangumi アカウント名はサーバーに保存されません。照合はこのブラウザから直接 Bangumi API へ行い、アカウント名はブラウザの中だけで使います。</li>
-                <li>次の四半期の番組は季節の始まり約 8 日前から番組表に載り始めます。既定ではその時期から対象四半期を新シーズンへ切り替えます。</li>
             </ul>
             <v-row align="center">
                 <v-col cols="12" sm="5"><v-text-field v-model.trim="user" label="Bangumi アカウント" :disabled="busy" hide-details="auto"></v-text-field></v-col>
                 <v-col cols="12" sm="4">
-                    <v-select
-                        v-model="quarter"
-                        :items="quarters"
-                        label="対象四半期"
-                        :disabled="busy"
-                        hide-details="auto"
-                        hint="変えると照合結果をいったん消します"
-                        persistent-hint
-                    ></v-select>
+                    <v-select v-model="quarter" :items="quarters" label="対象四半期" :disabled="busy"></v-select>
                 </v-col>
                 <v-col cols="12" sm="3"><v-btn color="primary" block :loading="scanning" :disabled="busy || !user" v-on:click="scan">番組表を照合</v-btn></v-col>
             </v-row>
@@ -120,7 +109,6 @@
                     <v-btn class="confirm-btn" color="primary" :loading="saving" :disabled="busy || selectedCount === 0 || invalidSelection" v-on:click="confirm">
                         選択した {{ saving ? confirmCount : selectedCount }} 件のルールを作成
                     </v-btn>
-                    <span class="caption">MBS/TBS の地上波を優先し、なければ BS 候補を初期選択します。チェックを変更できます。</span>
                 </div>
                 <div class="validation-slot error--text" role="status">{{ invalidSelection ? '選択した候補の保存先を確認してください。' : '' }}</div>
             </template>
@@ -433,7 +421,7 @@ export default class BangumiQuarterImport extends Vue {
     private async loadAllRules(): Promise<apid.Rule[]> {
         const rules: apid.Rule[] = [];
         for (;;) {
-            const page = await this.ruleApi.gets({ offset: rules.length, limit: 500 });
+            const page = await this.ruleApi.gets({ offset: rules.length, limit: 500, type: 'all' });
             rules.push(...page.rules);
             if (rules.length >= page.total || page.rules.length === 0) break;
         }

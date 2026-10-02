@@ -153,24 +153,38 @@ function tokyoParts(timestamp) {
         hour: Number(parts.hour), minute: Number(parts.minute), second: Number(parts.second) };
 }
 
-export function isBsChannel(channel) {
+export function isTokyoMxChannel(channel) {
     const type = String(channel?.channelType || '').toUpperCase();
-    const code = String(channel?.channel || '').toUpperCase();
-    const name = String(channel?.name || '').toUpperCase();
-    return type.startsWith('BS') || code.startsWith('BS') || /^ＢＳ/.test(name) || /[^Ａ-Ｚ]ＢＳ/.test(name) || /^BS/.test(name) || /[^A-Z]BS/.test(name);
+    return type.startsWith('GR') && channel?.networkId === 32391;
+}
+
+export function hasSubtitles(program) {
+    for (const index of [1, 2, 3]) {
+        if (program?.[`genre${index}`] === 0x0b && program?.[`subGenre${index}`] === 0x05) return true;
+    }
+    return false;
 }
 
 export function defaultCandidateIndices(groups, channels, alreadyLinked = false) {
     if (alreadyLinked) return [];
-    const terrestrial = groups.map((candidate, index) => {
-        const channel = channels.get(candidate.channelId);
-        const name = String(channel?.name || '').normalize('NFKC').toUpperCase();
-        const type = String(channel?.channelType || '').toUpperCase();
-        return type.startsWith('GR') && /(?:^|[^A-Z])(?:MBS|TBS)(?=$|[^A-Z])/.test(name) ? index : -1;
-    }).filter(index => index >= 0);
-    if (terrestrial.length) return terrestrial;
-    const bs = groups.map((candidate, index) => isBsChannel(channels.get(candidate.channelId)) ? index : -1).filter(index => index >= 0);
-    return bs.length ? bs : groups.length ? [0] : [];
+    // 同じ時間帯を複数チャンネルで放送している場合の初期選択。
+    // 字幕付き番組を最優先し、放送タイプは BS、地上波、地上波の中では東京 MX の順で優先する。
+    let bestKey = null;
+    const indices = [];
+    for (const [index, group] of groups.entries()) {
+        const type = String(channels.get(group.channelId)?.channelType || '').toUpperCase();
+        let rank;
+        if (type.startsWith('BS')) rank = 0;
+        else if (type.startsWith('GR')) rank = isTokyoMxChannel(channels.get(group.channelId)) ? 2 : 1;
+        else rank = 3;
+        const key = (hasSubtitles(group.program) ? 0 : 10) + rank;
+        if (bestKey === null || key < bestKey) {
+            bestKey = key;
+            indices.length = 0;
+        }
+        if (key === bestKey) indices.push(index);
+    }
+    return indices;
 }
 
 export function directorySlug(subject) {
