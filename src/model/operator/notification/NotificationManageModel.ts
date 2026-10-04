@@ -693,7 +693,9 @@ export default class NotificationManageModel implements INotificationManageModel
     }
 
     private formatDate(timestamp: number): string {
-        return new Date(timestamp).toLocaleString();
+        return new Date(timestamp).toLocaleString('ja-JP', {
+            timeZone: 'Asia/Tokyo',
+        });
     }
 
     private sleep(ms: number): Promise<void> {
