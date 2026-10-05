@@ -117,54 +117,62 @@ class ReservationManageModel implements IReservationManageModel {
 
         // 実行権取得
         const exeId = await this.executeManagementModel.getExecution(ReservationManageModel.ADD_RESERVE_PRIORITY);
+        let isReleased = false;
         const finalize = () => {
-            this.executeManagementModel.unLockExecution(exeId);
+            if (isReleased === false) {
+                isReleased = true;
+                this.executeManagementModel.unLockExecution(exeId);
+            }
         };
 
-        // 予約情報の生成
-        let newReserve: Reserve;
         try {
-            if (typeof option.programId === 'undefined') {
-                newReserve = await this.createManualReserveWithSpecifiedTime(option);
-            } else {
-                newReserve = await this.createManualReserveWithProgramId(option);
+            // 予約情報の生成
+            let newReserve: Reserve;
+            try {
+                if (typeof option.programId === 'undefined') {
+                    newReserve = await this.createManualReserveWithSpecifiedTime(option);
+                } else {
+                    newReserve = await this.createManualReserveWithProgramId(option);
+                }
+            } catch (err) {
+                // 予約情報の生成失敗
+                finalize();
+                throw err;
             }
-        } catch (err) {
-            // 予約情報の生成失敗
+
+            // 追加する予約情報が競合するかチェック
+            await this.checkSingleReserveConflict(newReserve).catch(err => {
+                finalize();
+                throw err;
+            });
+
+            // 追加
+            const insertedId = await this.reserveDB.insertOnce(newReserve).catch(err => {
+                this.log.system.info(`add reservation error: ${option.programId}`);
+                this.log.system.error(err);
+                finalize();
+                throw new Error('ReservationManageModelAddReserveError');
+            });
+            newReserve.id = insertedId;
+
+            // 完了したのでロック解除
             finalize();
-            throw err;
+
+            this.log.system.info(
+                `successful add reservation: ${insertedId}` +
+                    (typeof option.programId !== 'undefined' ? `, ${option.programId}` : ''),
+            );
+
+            // イベント発行
+            this.reserveEvent.emitUpdated({
+                insert: [newReserve],
+                isSuppressLog: false,
+            });
+
+            return insertedId;
+        } finally {
+            finalize();
         }
-
-        // 追加する予約情報が競合するかチェック
-        await this.checkSingleReserveConflict(newReserve).catch(err => {
-            finalize();
-            throw err;
-        });
-
-        // 追加
-        const insertedId = await this.reserveDB.insertOnce(newReserve).catch(err => {
-            this.log.system.info(`add reservation error: ${option.programId}`);
-            this.log.system.error(err);
-            finalize();
-            throw new Error('ReservationManageModelAddReserveError');
-        });
-        newReserve.id = insertedId;
-
-        // 完了したのでロック解除
-        finalize();
-
-        this.log.system.info(
-            `successful add reservation: ${insertedId}` +
-                (typeof option.programId !== 'undefined' ? `, ${option.programId}` : ''),
-        );
-
-        // イベント発行
-        this.reserveEvent.emitUpdated({
-            insert: [newReserve],
-            isSuppressLog: false,
-        });
-
-        return insertedId;
     }
 
     /**
@@ -187,45 +195,53 @@ class ReservationManageModel implements IReservationManageModel {
 
         // 実行権取得
         const exeId = await this.executeManagementModel.getExecution(ReservationManageModel.ADD_RESERVE_PRIORITY);
+        let isReleased = false;
         const finalize = () => {
-            this.executeManagementModel.unLockExecution(exeId);
+            if (isReleased === false) {
+                isReleased = true;
+                this.executeManagementModel.unLockExecution(exeId);
+            }
         };
 
-        // 予約情報を生成する
-        const newReserve = await this.createEventRelayReserve(programId, parentReserve).catch(err => {
+        try {
+            // 予約情報を生成する
+            const newReserve = await this.createEventRelayReserve(programId, parentReserve).catch(err => {
+                finalize();
+                throw err;
+            });
+
+            // 追加する予約情報が競合するかチェック
+            await this.checkSingleReserveConflict(newReserve).catch(err => {
+                finalize();
+                throw err;
+            });
+
+            // 追加
+            const insertedId = await this.reserveDB.insertOnce(newReserve).catch(err => {
+                this.log.system.info(`add reservation error: reserveId: ${parentReserve.id}, programId: ${programId}`);
+                this.log.system.error(err);
+                finalize();
+                throw new Error('ReservationManageModelAddReserveError');
+            });
+            newReserve.id = insertedId;
+
+            // 完了したのでロック解除
             finalize();
-            throw err;
-        });
 
-        // 追加する予約情報が競合するかチェック
-        await this.checkSingleReserveConflict(newReserve).catch(err => {
+            this.log.system.info(
+                `successful add event relay. reserveId: ${parentReserve.id}, newReserveId: ${newReserve.id} programId: ${programId}`,
+            );
+
+            // イベント発行
+            this.reserveEvent.emitUpdated({
+                insert: [newReserve],
+                isSuppressLog: false,
+            });
+
+            return insertedId;
+        } finally {
             finalize();
-            throw err;
-        });
-
-        // 追加
-        const insertedId = await this.reserveDB.insertOnce(newReserve).catch(err => {
-            this.log.system.info(`add reservation error: reserveId: ${parentReserve.id}, programId: ${programId}`);
-            this.log.system.error(err);
-            finalize();
-            throw new Error('ReservationManageModelAddReserveError');
-        });
-        newReserve.id = insertedId;
-
-        // 完了したのでロック解除
-        finalize();
-
-        this.log.system.info(
-            `successful add event relay. reserveId: ${parentReserve.id}, newReserveId: ${newReserve.id} programId: ${programId}`,
-        );
-
-        // イベント発行
-        this.reserveEvent.emitUpdated({
-            insert: [newReserve],
-            isSuppressLog: false,
-        });
-
-        return insertedId;
+        }
     }
 
     /**
@@ -579,100 +595,108 @@ class ReservationManageModel implements IReservationManageModel {
     public async update(reserveId: apid.ReserveId, isSuppressLog: boolean = false): Promise<void> {
         // 実行権取得
         const exeId = await this.executeManagementModel.getExecution(ReservationManageModel.UPDATE_RESERVE_PRIORITY);
+        let isReleased = false;
         const finalize = () => {
-            this.executeManagementModel.unLockExecution(exeId);
+            if (isReleased === false) {
+                isReleased = true;
+                this.executeManagementModel.unLockExecution(exeId);
+            }
         };
 
-        if (isSuppressLog === false) {
-            this.log.system.info(`update reservation: ${reserveId}`);
-        }
-
-        // 予約情報を取得する
-        const oldReserve = await this.reserveDB.findId(reserveId).catch(err => {
-            finalize();
-            this.log.system.error(`get reservation error: ${reserveId}`);
-            throw err;
-        });
-        if (oldReserve === null) {
-            finalize();
-            this.log.system.error(`reservation is not  is not found: ${reserveId}`);
-            throw new Error('ReservationIsNotFound');
-        }
-
-        // programId 予約か確認する
-        if (oldReserve.programId === null) {
-            finalize();
-            this.log.system.warn(`reservation is not program id reservation: ${reserveId}`);
-
-            return;
-        }
-
-        // 番組情報を取得する
-        const newProgram = await this.programDB.findId(oldReserve.programId).catch(err => {
-            finalize();
-            this.log.system.error(`get program error: ${reserveId}`);
-            throw err;
-        });
-
-        // 番組情報が存在するか確認する
-        if (newProgram === null) {
-            finalize();
-            this.log.system.warn(`program is not found: ${reserveId}`);
-
-            return;
-        }
-
-        // 番組情報に更新があったか確認する
-        if (oldReserve.programUpdateTime === newProgram.updateTime) {
-            finalize();
+        try {
             if (isSuppressLog === false) {
-                this.log.system.info(`no update reservation: ${reserveId}`);
+                this.log.system.info(`update reservation: ${reserveId}`);
             }
 
-            return;
-        }
+            // 予約情報を取得する
+            const oldReserve = await this.reserveDB.findId(reserveId).catch(err => {
+                finalize();
+                this.log.system.error(`get reservation error: ${reserveId}`);
+                throw err;
+            });
+            if (oldReserve === null) {
+                finalize();
+                this.log.system.error(`reservation is not  is not found: ${reserveId}`);
+                throw new Error('ReservationIsNotFound');
+            }
 
-        // 予約情報生成
-        const newReserve = Object.assign({}, oldReserve);
-        this.setProgramToReserve(newReserve, newProgram);
-        newReserve.updateTime = oldReserve.updateTime;
-        newReserve.isConflict = false;
-        newReserve.isEventRelay = oldReserve.isEventRelay;
+            // programId 予約か確認する
+            if (oldReserve.programId === null) {
+                finalize();
+                this.log.system.warn(`reservation is not program id reservation: ${reserveId}`);
 
-        // 新旧の予約での差分を生成
-        const diff = await this.createDiff(
-            {
-                times: [
-                    {
-                        startAt: oldReserve.startAt,
-                        endAt: oldReserve.endAt,
-                    },
-                    {
-                        startAt: newReserve.startAt,
-                        endAt: newReserve.endAt,
-                    },
-                ],
-                hasSkip: false,
-                hasConflict: true,
-                hasOverlap: false,
-                excludeReserveId: reserveId,
-            },
-            [newReserve],
-            [oldReserve],
-            isSuppressLog,
-        ).catch(err => {
+                return;
+            }
+
+            // 番組情報を取得する
+            const newProgram = await this.programDB.findId(oldReserve.programId).catch(err => {
+                finalize();
+                this.log.system.error(`get program error: ${reserveId}`);
+                throw err;
+            });
+
+            // 番組情報が存在するか確認する
+            if (newProgram === null) {
+                finalize();
+                this.log.system.warn(`program is not found: ${reserveId}`);
+
+                return;
+            }
+
+            // 番組情報に更新があったか確認する
+            if (oldReserve.programUpdateTime === newProgram.updateTime) {
+                finalize();
+                if (isSuppressLog === false) {
+                    this.log.system.info(`no update reservation: ${reserveId}`);
+                }
+
+                return;
+            }
+
+            // 予約情報生成
+            const newReserve = Object.assign({}, oldReserve);
+            this.setProgramToReserve(newReserve, newProgram);
+            newReserve.updateTime = oldReserve.updateTime;
+            newReserve.isConflict = false;
+            newReserve.isEventRelay = oldReserve.isEventRelay;
+
+            // 新旧の予約での差分を生成
+            const diff = await this.createDiff(
+                {
+                    times: [
+                        {
+                            startAt: oldReserve.startAt,
+                            endAt: oldReserve.endAt,
+                        },
+                        {
+                            startAt: newReserve.startAt,
+                            endAt: newReserve.endAt,
+                        },
+                    ],
+                    hasSkip: false,
+                    hasConflict: true,
+                    hasOverlap: false,
+                    excludeReserveId: reserveId,
+                },
+                [newReserve],
+                [oldReserve],
+                isSuppressLog,
+            ).catch(err => {
+                finalize();
+                throw err;
+            });
+
             finalize();
-            throw err;
-        });
 
-        finalize();
+            if (isSuppressLog === false) {
+                this.log.system.info(`successful update reservation: ${reserveId}`);
+            }
 
-        if (isSuppressLog === false) {
-            this.log.system.info(`successful update reservation: ${reserveId}`);
+            // イベント発行
+            this.reserveEvent.emitUpdated(diff);
+        } finally {
+            finalize();
         }
-
-        // イベント発行
-        this.reserveEvent.emitUpdated(diff);
     }
 
     /**
@@ -690,232 +714,240 @@ class ReservationManageModel implements IReservationManageModel {
         const exeId = await this.executeManagementModel.getExecution(
             ReservationManageModel.RULE_UPDATE_RESERVE_PRIORITY,
         );
+        let isReleased = false;
         const finalize = () => {
-            this.executeManagementModel.unLockExecution(exeId);
+            if (isReleased === false) {
+                isReleased = true;
+                this.executeManagementModel.unLockExecution(exeId);
+            }
         };
 
-        if (isSuppressLog === false) {
-            this.log.system.info(`update rule reservation: ${ruleId}`);
-        }
+        try {
+            if (isSuppressLog === false) {
+                this.log.system.info(`update rule reservation: ${ruleId}`);
+            }
 
-        // ルールを取得
-        const rule = await this.ruleDB.findId(ruleId, true).catch(err => {
-            this.log.system.error(`get rule error: ${ruleId}`);
-            this.log.system.error(err);
-            throw err;
-        });
-
-        /**
-         * 更新前のルール予約と更新後のルール予約による他の予約の影響を計算する必要があるので、
-         * 古いルール予約と新しいルール予約の番組情報を取得し、
-         * reserveDB.findTimeRanges で該当する予約を取り出す
-         */
-
-        // reserveDB.findTimeRanges で使用するために新旧ルール予約の開始、終了時刻を保存する
-        const times: IReserveTimeOption[] = [];
-
-        // 古い予約情報の取り出し
-        const oldRuleReserves = await this.reserveDB
-            .findRuleId({
-                ruleId: ruleId,
-                hasSkip: true,
-                hasConflict: true,
-                hasOverlap: true,
-                hasEventRelay: false, // イベントリレーの情報は更新対象とさせないため除外
-            })
-            .catch(err => {
-                finalize();
-                this.log.system.error(`find rule reservation error: ${ruleId}`);
+            // ルールを取得
+            const rule = await this.ruleDB.findId(ruleId, true).catch(err => {
+                this.log.system.error(`get rule error: ${ruleId}`);
                 this.log.system.error(err);
                 throw err;
             });
 
-        // 新しい予約情報検索
-        const newRulePrograms =
-            rule !== null && rule.reserveOption.enable === true && rule.isTimeSpecification === false
-                ? await this.programDB
-                      .findRule({
-                          searchOption: rule.searchOption,
-                          reserveOption: rule.reserveOption,
-                      })
-                      .catch(err => {
-                          finalize();
-                          this.log.system.error(`find rule error: ${ruleId}`);
-                          this.log.system.error(err);
-                          throw err;
-                      })
-                : [];
+            /**
+             * 更新前のルール予約と更新後のルール予約による他の予約の影響を計算する必要があるので、
+             * 古いルール予約と新しいルール予約の番組情報を取得し、
+             * reserveDB.findTimeRanges で該当する予約を取り出す
+             */
 
-        // 予約情報作成
-        const newRuleReserves: Reserve[] = [];
-        if (rule !== null && rule.reserveOption.enable === true) {
-            // 新しいルール予約情報に skip, overlap の情報をコピーするための索引を作成
-            const oldRuleIndex: { [key: string]: Reserve } = {};
-            for (const old of oldRuleReserves) {
-                oldRuleIndex[this.createReserveKey(old)] = old;
-            }
+            // reserveDB.findTimeRanges で使用するために新旧ルール予約の開始、終了時刻を保存する
+            const times: IReserveTimeOption[] = [];
 
-            const updateTime = new Date().getTime();
-            if (rule.isTimeSpecification === true) {
-                // 時刻指定予約
-                if (
-                    typeof rule.searchOption.keyword === 'undefined' ||
-                    typeof rule.searchOption.channelIds === 'undefined' ||
-                    typeof rule.searchOption.times === 'undefined'
-                ) {
+            // 古い予約情報の取り出し
+            const oldRuleReserves = await this.reserveDB
+                .findRuleId({
+                    ruleId: ruleId,
+                    hasSkip: true,
+                    hasConflict: true,
+                    hasOverlap: true,
+                    hasEventRelay: false, // イベントリレーの情報は更新対象とさせないため除外
+                })
+                .catch(err => {
                     finalize();
-                    this.log.system.error(`rule search option error: ${ruleId}`);
-                    throw new Error('RuleSearchOptionError');
+                    this.log.system.error(`find rule reservation error: ${ruleId}`);
+                    this.log.system.error(err);
+                    throw err;
+                });
+
+            // 新しい予約情報検索
+            const newRulePrograms =
+                rule !== null && rule.reserveOption.enable === true && rule.isTimeSpecification === false
+                    ? await this.programDB
+                          .findRule({
+                              searchOption: rule.searchOption,
+                              reserveOption: rule.reserveOption,
+                          })
+                          .catch(err => {
+                              finalize();
+                              this.log.system.error(`find rule error: ${ruleId}`);
+                              this.log.system.error(err);
+                              throw err;
+                          })
+                    : [];
+
+            // 予約情報作成
+            const newRuleReserves: Reserve[] = [];
+            if (rule !== null && rule.reserveOption.enable === true) {
+                // 新しいルール予約情報に skip, overlap の情報をコピーするための索引を作成
+                const oldRuleIndex: { [key: string]: Reserve } = {};
+                for (const old of oldRuleReserves) {
+                    oldRuleIndex[this.createReserveKey(old)] = old;
                 }
 
-                // times 準備
-                const baseTime = new Date(
-                    DateUtil.format(DateUtil.getJaDate(new Date()), 'yyyy/MM/dd 00:00:00 +0900'),
-                ).getTime();
-                for (const time of rule.searchOption.times) {
-                    if (typeof time.start === 'undefined' || typeof time.range === 'undefined') {
-                        throw new Error('RuleSearchTimesOptionError');
+                const updateTime = new Date().getTime();
+                if (rule.isTimeSpecification === true) {
+                    // 時刻指定予約
+                    if (
+                        typeof rule.searchOption.keyword === 'undefined' ||
+                        typeof rule.searchOption.channelIds === 'undefined' ||
+                        typeof rule.searchOption.times === 'undefined'
+                    ) {
+                        finalize();
+                        this.log.system.error(`rule search option error: ${ruleId}`);
+                        throw new Error('RuleSearchOptionError');
                     }
 
-                    // 曜日情報
-                    const weeks: boolean[] = [
-                        (time.week & 0x01) !== 0, // 日
-                        (time.week & 0x02) !== 0, // 月
-                        (time.week & 0x04) !== 0, // 火
-                        (time.week & 0x08) !== 0, // 水
-                        (time.week & 0x10) !== 0, // 木
-                        (time.week & 0x20) !== 0, // 金
-                        (time.week & 0x40) !== 0, // 土
-                    ];
+                    // times 準備
+                    const baseTime = new Date(
+                        DateUtil.format(DateUtil.getJaDate(new Date()), 'yyyy/MM/dd 00:00:00 +0900'),
+                    ).getTime();
+                    for (const time of rule.searchOption.times) {
+                        if (typeof time.start === 'undefined' || typeof time.range === 'undefined') {
+                            throw new Error('RuleSearchTimesOptionError');
+                        }
 
-                    for (let i = 0; i < 8; i++) {
-                        // 1 週間分の予約情報を作成する
-                        const startAt = baseTime + 1000 * 60 * 60 * 24 * i + time.start * 1000;
-                        const endAt = baseTime + 1000 * 60 * 60 * 24 * i + (time.start + time.range) * 1000;
+                        // 曜日情報
+                        const weeks: boolean[] = [
+                            (time.week & 0x01) !== 0, // 日
+                            (time.week & 0x02) !== 0, // 月
+                            (time.week & 0x04) !== 0, // 火
+                            (time.week & 0x08) !== 0, // 水
+                            (time.week & 0x10) !== 0, // 木
+                            (time.week & 0x20) !== 0, // 金
+                            (time.week & 0x40) !== 0, // 土
+                        ];
 
-                        if (endAt < updateTime || weeks[DateUtil.getJaDate(new Date(startAt)).getDay()] === false) {
-                            // 終了時刻が現在時刻より古い or 有効な曜日ではない
+                        for (let i = 0; i < 8; i++) {
+                            // 1 週間分の予約情報を作成する
+                            const startAt = baseTime + 1000 * 60 * 60 * 24 * i + time.start * 1000;
+                            const endAt = baseTime + 1000 * 60 * 60 * 24 * i + (time.start + time.range) * 1000;
+
+                            if (endAt < updateTime || weeks[DateUtil.getJaDate(new Date(startAt)).getDay()] === false) {
+                                // 終了時刻が現在時刻より古い or 有効な曜日ではない
+                                continue;
+                            }
+
+                            // 予約情報検索のために時刻位置取得
+                            times.push({
+                                startAt: startAt,
+                                endAt: endAt,
+                            });
+                        }
+                    }
+
+                    for (const channelId of rule.searchOption.channelIds) {
+                        // channelId
+                        let channel: Channel | null;
+                        try {
+                            channel = await this.channelDB.findId(channelId);
+                        } catch (err: any) {
+                            this.log.system.error(`get channel id error: ${channelId}`);
+                            continue;
+                        }
+                        if (channel === null) {
+                            this.log.system.error(`channel id is not found: ${channelId}`);
                             continue;
                         }
 
-                        // 予約情報検索のために時刻位置取得
-                        times.push({
-                            startAt: startAt,
-                            endAt: endAt,
-                        });
-                    }
-                }
+                        // times の分だけ予約情報を生成する
+                        for (const time of times) {
+                            const isMatched = await this.isTimeSpecificationRuleMatched(rule, channelId, time.startAt);
+                            if (isMatched === false) {
+                                continue;
+                            }
 
-                for (const channelId of rule.searchOption.channelIds) {
-                    // channelId
-                    let channel: Channel | null;
-                    try {
-                        channel = await this.channelDB.findId(channelId);
-                    } catch (err: any) {
-                        this.log.system.error(`get channel id error: ${channelId}`);
-                        continue;
-                    }
-                    if (channel === null) {
-                        this.log.system.error(`channel id is not found: ${channelId}`);
-                        continue;
-                    }
+                            // 予約情報セット
+                            const newReserve = new Reserve();
+                            newReserve.isTimeSpecified = true;
+                            newReserve.name = StrUtil.toDBStr(rule.searchOption.keyword);
+                            newReserve.halfWidthName = StrUtil.toHalf(newReserve.name);
+                            newReserve.updateTime = updateTime;
+                            newReserve.startAt = time.startAt;
+                            newReserve.endAt = time.endAt;
+                            newReserve.channelId = channelId;
+                            newReserve.channel = channel.channel;
+                            newReserve.channelType = channel.channelType;
+                            this.setProgramToRuleReserve(newReserve, null, <RuleWithCnt>rule, updateTime);
 
-                    // times の分だけ予約情報を生成する
-                    for (const time of times) {
-                        const isMatched = await this.isTimeSpecificationRuleMatched(rule, channelId, time.startAt);
-                        if (isMatched === false) {
-                            continue;
+                            // skip, overlap コピー
+                            const oldReserve = oldRuleIndex[this.createReserveKey(newReserve)];
+                            if (typeof oldReserve !== 'undefined') {
+                                newReserve.isSkip = oldReserve.isSkip;
+                                newReserve.isIgnoreOverlap = oldReserve.isIgnoreOverlap;
+                                newReserve.isOverlap = oldReserve.isOverlap;
+                            }
+
+                            newRuleReserves.push(newReserve);
                         }
-
-                        // 予約情報セット
+                    }
+                } else if (newRulePrograms.length !== 0) {
+                    // 新しいルールに一致する予約情報があった
+                    for (const program of newRulePrograms) {
                         const newReserve = new Reserve();
-                        newReserve.isTimeSpecified = true;
-                        newReserve.name = StrUtil.toDBStr(rule.searchOption.keyword);
-                        newReserve.halfWidthName = StrUtil.toHalf(newReserve.name);
-                        newReserve.updateTime = updateTime;
-                        newReserve.startAt = time.startAt;
-                        newReserve.endAt = time.endAt;
-                        newReserve.channelId = channelId;
-                        newReserve.channel = channel.channel;
-                        newReserve.channelType = channel.channelType;
-                        this.setProgramToRuleReserve(newReserve, null, <RuleWithCnt>rule, updateTime);
+                        // 予約情報追加
+                        this.setProgramToRuleReserve(newReserve, program, <RuleWithCnt>rule, updateTime);
 
-                        // skip, overlap コピー
+                        // skip, overlap 情報をコピー
                         const oldReserve = oldRuleIndex[this.createReserveKey(newReserve)];
                         if (typeof oldReserve !== 'undefined') {
                             newReserve.isSkip = oldReserve.isSkip;
                             newReserve.isIgnoreOverlap = oldReserve.isIgnoreOverlap;
-                            newReserve.isOverlap = oldReserve.isOverlap;
+                            // isIgnoreOverlap が有効な場合はプログラム検索の重複結果ではなく予約の重複結果をコピーする
+                            newReserve.isOverlap =
+                                oldReserve.isIgnoreOverlap === true ? oldReserve.isOverlap : program.overlap;
                         }
-
                         newRuleReserves.push(newReserve);
+
+                        // 予約情報検索のために時刻位置取得
+                        times.push({
+                            startAt: program.startAt,
+                            endAt: program.endAt,
+                        });
                     }
                 }
-            } else if (newRulePrograms.length !== 0) {
-                // 新しいルールに一致する予約情報があった
-                for (const program of newRulePrograms) {
-                    const newReserve = new Reserve();
-                    // 予約情報追加
-                    this.setProgramToRuleReserve(newReserve, program, <RuleWithCnt>rule, updateTime);
+            }
 
-                    // skip, overlap 情報をコピー
-                    const oldReserve = oldRuleIndex[this.createReserveKey(newReserve)];
-                    if (typeof oldReserve !== 'undefined') {
-                        newReserve.isSkip = oldReserve.isSkip;
-                        newReserve.isIgnoreOverlap = oldReserve.isIgnoreOverlap;
-                        // isIgnoreOverlap が有効な場合はプログラム検索の重複結果ではなく予約の重複結果をコピーする
-                        newReserve.isOverlap =
-                            oldReserve.isIgnoreOverlap === true ? oldReserve.isOverlap : program.overlap;
-                    }
-                    newRuleReserves.push(newReserve);
+            // 古いルール予約の時刻位置取得
+            for (const reserve of oldRuleReserves) {
+                times.push({ startAt: reserve.startAt, endAt: reserve.endAt });
+            }
 
-                    // 予約情報検索のために時刻位置取得
-                    times.push({
-                        startAt: program.startAt,
-                        endAt: program.endAt,
-                    });
+            // 初回更新かつ時刻指定予約である場合は
+            // createDiff 実行時に差分を出して録画タイマーを生成するように強制する
+            if (isFirstUpdate === true && rule?.isTimeSpecification === true) {
+                for (const r of oldRuleReserves) {
+                    r.ruleUpdateCnt = -1; // ruleUpdateCnt は 0 以上しか存在しないので強制的に差分となる
                 }
             }
-        }
 
-        // 古いルール予約の時刻位置取得
-        for (const reserve of oldRuleReserves) {
-            times.push({ startAt: reserve.startAt, endAt: reserve.endAt });
-        }
+            // 新旧の予約での差分を生成
+            const diff = await this.createDiff(
+                {
+                    times: times,
+                    hasSkip: false,
+                    hasConflict: true,
+                    hasOverlap: false,
+                    excludeRuleId: ruleId, // ruleId 指定で古いルール予約は除外する
+                },
+                newRuleReserves,
+                oldRuleReserves,
+                isSuppressLog,
+            ).catch(err => {
+                finalize();
+                throw err;
+            });
 
-        // 初回更新かつ時刻指定予約である場合は
-        // createDiff 実行時に差分を出して録画タイマーを生成するように強制する
-        if (isFirstUpdate === true && rule?.isTimeSpecification === true) {
-            for (const r of oldRuleReserves) {
-                r.ruleUpdateCnt = -1; // ruleUpdateCnt は 0 以上しか存在しないので強制的に差分となる
-            }
-        }
-
-        // 新旧の予約での差分を生成
-        const diff = await this.createDiff(
-            {
-                times: times,
-                hasSkip: false,
-                hasConflict: true,
-                hasOverlap: false,
-                excludeRuleId: ruleId, // ruleId 指定で古いルール予約は除外する
-            },
-            newRuleReserves,
-            oldRuleReserves,
-            isSuppressLog,
-        ).catch(err => {
             finalize();
-            throw err;
-        });
 
-        finalize();
+            if (isSuppressLog === false) {
+                this.log.system.info(`successful update rule reservation: ${ruleId}`);
+            }
 
-        if (isSuppressLog === false) {
-            this.log.system.info(`successful update rule reservation: ${ruleId}`);
+            // イベント発行
+            this.reserveEvent.emitUpdated(diff);
+        } finally {
+            finalize();
         }
-
-        // イベント発行
-        this.reserveEvent.emitUpdated(diff);
     }
 
     /**
@@ -1252,74 +1284,82 @@ class ReservationManageModel implements IReservationManageModel {
     public async cancel(reserveId: apid.ReserveId): Promise<void> {
         // 実行権取得
         const exeId = await this.executeManagementModel.getExecution(ReservationManageModel.CANCEL_RESERVE_PRIORITY);
+        let isReleased = false;
         const finalize = () => {
-            this.executeManagementModel.unLockExecution(exeId);
+            if (isReleased === false) {
+                isReleased = true;
+                this.executeManagementModel.unLockExecution(exeId);
+            }
         };
 
-        this.log.system.info(`cancel reservation: ${reserveId}`);
+        try {
+            this.log.system.info(`cancel reservation: ${reserveId}`);
 
-        // reserveId が存在するかチェック
-        const cancelReserve = await this.reserveDB.findId(reserveId).catch(err => {
-            finalize();
-            this.log.system.error(`get reservation error: ${reserveId}`);
-            throw err;
-        });
+            // reserveId が存在するかチェック
+            const cancelReserve = await this.reserveDB.findId(reserveId).catch(err => {
+                finalize();
+                this.log.system.error(`get reservation error: ${reserveId}`);
+                throw err;
+            });
 
-        if (cancelReserve === null) {
-            finalize();
-            this.log.system.error(`reservation is not found: ${reserveId}`);
-            throw new Error('ReservationIsNotFound');
-        }
-
-        const oldReserves: Reserve[] = [Object.assign({}, cancelReserve)];
-
-        // 比較のために新しい予約情報を生成
-        const newReserves: Reserve[] = [];
-        if (cancelReserve.ruleId !== null && cancelReserve.isEventRelay === false) {
-            // ルール予約の場合
-            if (cancelReserve.isOverlap === true) {
-                // overlap
-                cancelReserve.isIgnoreOverlap = false;
-                cancelReserve.isOverlap = true;
-            } else {
-                // skip
-                cancelReserve.isSkip = true;
+            if (cancelReserve === null) {
+                finalize();
+                this.log.system.error(`reservation is not found: ${reserveId}`);
+                throw new Error('ReservationIsNotFound');
             }
-            // skip or overlap している場合は競合しない
-            cancelReserve.isConflict = false;
 
-            // 新しい予約情報に追加
-            newReserves.push(cancelReserve);
-        }
+            const oldReserves: Reserve[] = [Object.assign({}, cancelReserve)];
 
-        // 新旧の予約での差分を生成
-        const diff = await this.createDiff(
-            {
-                times: [
-                    {
-                        startAt: cancelReserve.startAt,
-                        endAt: cancelReserve.endAt,
-                    },
-                ],
-                hasSkip: false,
-                hasConflict: true,
-                hasOverlap: false,
-                excludeReserveId: reserveId,
-            },
-            newReserves,
-            oldReserves,
-            false,
-        ).catch(err => {
+            // 比較のために新しい予約情報を生成
+            const newReserves: Reserve[] = [];
+            if (cancelReserve.ruleId !== null && cancelReserve.isEventRelay === false) {
+                // ルール予約の場合
+                if (cancelReserve.isOverlap === true) {
+                    // overlap
+                    cancelReserve.isIgnoreOverlap = false;
+                    cancelReserve.isOverlap = true;
+                } else {
+                    // skip
+                    cancelReserve.isSkip = true;
+                }
+                // skip or overlap している場合は競合しない
+                cancelReserve.isConflict = false;
+
+                // 新しい予約情報に追加
+                newReserves.push(cancelReserve);
+            }
+
+            // 新旧の予約での差分を生成
+            const diff = await this.createDiff(
+                {
+                    times: [
+                        {
+                            startAt: cancelReserve.startAt,
+                            endAt: cancelReserve.endAt,
+                        },
+                    ],
+                    hasSkip: false,
+                    hasConflict: true,
+                    hasOverlap: false,
+                    excludeReserveId: reserveId,
+                },
+                newReserves,
+                oldReserves,
+                false,
+            ).catch(err => {
+                finalize();
+                throw err;
+            });
+
             finalize();
-            throw err;
-        });
 
-        finalize();
+            this.log.system.info(`successful cancel reservation: ${reserveId}`);
 
-        this.log.system.info(`successful cancel reservation: ${reserveId}`);
-
-        // イベント発行
-        this.reserveEvent.emitUpdated(diff);
+            // イベント発行
+            this.reserveEvent.emitUpdated(diff);
+        } finally {
+            finalize();
+        }
     }
 
     /**
@@ -1331,71 +1371,79 @@ class ReservationManageModel implements IReservationManageModel {
         const exeId = await this.executeManagementModel.getExecution(
             ReservationManageModel.REMOVE_SKIP_RESERVE_PRIORITY,
         );
+        let isReleased = false;
         const finalize = () => {
-            this.executeManagementModel.unLockExecution(exeId);
+            if (isReleased === false) {
+                isReleased = true;
+                this.executeManagementModel.unLockExecution(exeId);
+            }
         };
 
-        this.log.system.info(`remove skip reservation: ${reserveId}`);
+        try {
+            this.log.system.info(`remove skip reservation: ${reserveId}`);
 
-        // reserveId が存在するかチェック
-        const oldReserve = await this.reserveDB.findId(reserveId).catch(err => {
+            // reserveId が存在するかチェック
+            const oldReserve = await this.reserveDB.findId(reserveId).catch(err => {
+                finalize();
+                this.log.system.error(`get reservation error: ${reserveId}`);
+                throw err;
+            });
+            if (oldReserve === null) {
+                finalize();
+                this.log.system.error(`reservation is not found: ${reserveId}`);
+                throw new Error('ReservationIsNotFound');
+            }
+
+            // ルール予約かチェック
+            if (oldReserve.ruleId === null || oldReserve.isEventRelay === true) {
+                finalize();
+                this.log.system.warn(`reservation is not rule reservation: ${reserveId}`);
+
+                return;
+            }
+
+            // skip が有効化チェック
+            if (oldReserve.isSkip !== true) {
+                finalize();
+                this.log.system.warn(`reservation is not skiped: ${reserveId}`);
+
+                return;
+            }
+
+            // skip を解除した予約を作成
+            const newReserves: Reserve = Object.assign({}, oldReserve);
+            newReserves.isSkip = false;
+
+            const diff = await this.createDiff(
+                {
+                    times: [
+                        {
+                            startAt: oldReserve.startAt,
+                            endAt: oldReserve.endAt,
+                        },
+                    ],
+                    hasSkip: false,
+                    hasConflict: true,
+                    hasOverlap: false,
+                    excludeReserveId: reserveId,
+                },
+                [newReserves],
+                [oldReserve],
+                false,
+            ).catch(err => {
+                finalize();
+                throw err;
+            });
+
             finalize();
-            this.log.system.error(`get reservation error: ${reserveId}`);
-            throw err;
-        });
-        if (oldReserve === null) {
+
+            this.log.system.info(`successful remove skip reservation: ${reserveId}`);
+
+            // イベント発行
+            this.reserveEvent.emitUpdated(diff);
+        } finally {
             finalize();
-            this.log.system.error(`reservation is not found: ${reserveId}`);
-            throw new Error('ReservationIsNotFound');
         }
-
-        // ルール予約かチェック
-        if (oldReserve.ruleId === null || oldReserve.isEventRelay === true) {
-            finalize();
-            this.log.system.warn(`reservation is not rule reservation: ${reserveId}`);
-
-            return;
-        }
-
-        // skip が有効化チェック
-        if (oldReserve.isSkip !== true) {
-            finalize();
-            this.log.system.warn(`reservation is not skiped: ${reserveId}`);
-
-            return;
-        }
-
-        // skip を解除した予約を作成
-        const newReserves: Reserve = Object.assign({}, oldReserve);
-        newReserves.isSkip = false;
-
-        const diff = await this.createDiff(
-            {
-                times: [
-                    {
-                        startAt: oldReserve.startAt,
-                        endAt: oldReserve.endAt,
-                    },
-                ],
-                hasSkip: false,
-                hasConflict: true,
-                hasOverlap: false,
-                excludeReserveId: reserveId,
-            },
-            [newReserves],
-            [oldReserve],
-            false,
-        ).catch(err => {
-            finalize();
-            throw err;
-        });
-
-        finalize();
-
-        this.log.system.info(`successful remove skip reservation: ${reserveId}`);
-
-        // イベント発行
-        this.reserveEvent.emitUpdated(diff);
     }
 
     /**
@@ -1408,72 +1456,80 @@ class ReservationManageModel implements IReservationManageModel {
         const exeId = await this.executeManagementModel.getExecution(
             ReservationManageModel.REMOVE_OVERLAP_RESERVE_PRIORITY,
         );
+        let isReleased = false;
         const finalize = () => {
-            this.executeManagementModel.unLockExecution(exeId);
+            if (isReleased === false) {
+                isReleased = true;
+                this.executeManagementModel.unLockExecution(exeId);
+            }
         };
 
-        this.log.system.info(`remove overlap reservation: ${reserveId}`);
+        try {
+            this.log.system.info(`remove overlap reservation: ${reserveId}`);
 
-        // reserveId が存在するかチェック
-        const oldReserve = await this.reserveDB.findId(reserveId).catch(err => {
+            // reserveId が存在するかチェック
+            const oldReserve = await this.reserveDB.findId(reserveId).catch(err => {
+                finalize();
+                this.log.system.error(`get reservation error: ${reserveId}`);
+                throw err;
+            });
+            if (oldReserve === null) {
+                finalize();
+                this.log.system.error(`reservation is not found: ${reserveId}`);
+                throw new Error('ReservationIsNotFound');
+            }
+
+            // ルール予約かチェック
+            if (oldReserve.ruleId === null || oldReserve.isEventRelay === true) {
+                finalize();
+                this.log.system.warn(`reservation is not rule reservation: ${reserveId}`);
+
+                return;
+            }
+
+            // overlap が解除されていないかチェック
+            if (oldReserve.isIgnoreOverlap === true && oldReserve.isOverlap === false) {
+                finalize();
+                this.log.system.warn(`reservation is removed overlap: ${reserveId}`);
+
+                return;
+            }
+
+            // overlap を解除した予約を作成
+            const newReserves: Reserve = Object.assign({}, oldReserve);
+            newReserves.isIgnoreOverlap = true;
+            newReserves.isOverlap = false;
+
+            const diff = await this.createDiff(
+                {
+                    times: [
+                        {
+                            startAt: oldReserve.startAt,
+                            endAt: oldReserve.endAt,
+                        },
+                    ],
+                    hasSkip: false,
+                    hasConflict: true,
+                    hasOverlap: false,
+                    excludeReserveId: reserveId,
+                },
+                [newReserves],
+                [oldReserve],
+                false,
+            ).catch(err => {
+                finalize();
+                throw err;
+            });
+
             finalize();
-            this.log.system.error(`get reservation error: ${reserveId}`);
-            throw err;
-        });
-        if (oldReserve === null) {
+
+            this.log.system.info(`successful remove overlap reservation: ${reserveId}`);
+
+            // イベント発行
+            this.reserveEvent.emitUpdated(diff);
+        } finally {
             finalize();
-            this.log.system.error(`reservation is not found: ${reserveId}`);
-            throw new Error('ReservationIsNotFound');
         }
-
-        // ルール予約かチェック
-        if (oldReserve.ruleId === null || oldReserve.isEventRelay === true) {
-            finalize();
-            this.log.system.warn(`reservation is not rule reservation: ${reserveId}`);
-
-            return;
-        }
-
-        // overlap が解除されていないかチェック
-        if (oldReserve.isIgnoreOverlap === true && oldReserve.isOverlap === false) {
-            finalize();
-            this.log.system.warn(`reservation is removed overlap: ${reserveId}`);
-
-            return;
-        }
-
-        // overlap を解除した予約を作成
-        const newReserves: Reserve = Object.assign({}, oldReserve);
-        newReserves.isIgnoreOverlap = true;
-        newReserves.isOverlap = false;
-
-        const diff = await this.createDiff(
-            {
-                times: [
-                    {
-                        startAt: oldReserve.startAt,
-                        endAt: oldReserve.endAt,
-                    },
-                ],
-                hasSkip: false,
-                hasConflict: true,
-                hasOverlap: false,
-                excludeReserveId: reserveId,
-            },
-            [newReserves],
-            [oldReserve],
-            false,
-        ).catch(err => {
-            finalize();
-            throw err;
-        });
-
-        finalize();
-
-        this.log.system.info(`successful remove overlap reservation: ${reserveId}`);
-
-        // イベント発行
-        this.reserveEvent.emitUpdated(diff);
     }
 
     /**
@@ -1485,56 +1541,64 @@ class ReservationManageModel implements IReservationManageModel {
     public async edit(reserveId: apid.ReserveId, option: apid.EditManualReserveOption): Promise<void> {
         // 実行権取得
         const exeId = await this.executeManagementModel.getExecution(ReservationManageModel.EDIT_RESERVE_PRIORITY);
+        let isReleased = false;
         const finalize = () => {
-            this.executeManagementModel.unLockExecution(exeId);
+            if (isReleased === false) {
+                isReleased = true;
+                this.executeManagementModel.unLockExecution(exeId);
+            }
         };
 
-        this.log.system.info(`edit reservation: ${reserveId}`);
+        try {
+            this.log.system.info(`edit reservation: ${reserveId}`);
 
-        // オプションチェック
-        if (this.checkManualReserveOption(option, true) === false) {
-            this.log.system.error('edit reservation option error');
-            throw new Error('ReservationEditError');
-        }
+            // オプションチェック
+            if (this.checkManualReserveOption(option, true) === false) {
+                this.log.system.error('edit reservation option error');
+                throw new Error('ReservationEditError');
+            }
 
-        // reserveId が存在するかチェック
-        const newReserve = await this.reserveDB.findId(reserveId).catch(err => {
+            // reserveId が存在するかチェック
+            const newReserve = await this.reserveDB.findId(reserveId).catch(err => {
+                finalize();
+                this.log.system.error(`get reservation error: ${reserveId}`);
+                throw err;
+            });
+            if (newReserve === null) {
+                finalize();
+                this.log.system.error(`reservation is not found: ${reserveId}`);
+                throw new Error('ReservationIsNotFound');
+            }
+
+            // option から必要な情報をセットする
+            newReserve.allowEndLack = option.allowEndLack;
+            newReserve.removeDataBroadcast = option.removeDataBroadcast === true;
+            if (typeof option.tags !== 'undefined') {
+                newReserve.tags = JSON.stringify(option.tags);
+            }
+            this.setSaveOptionToReserve(newReserve, option.saveOption);
+            this.setEncodeOptionToReserve(newReserve, option.encodeOption);
+
+            // 更新
+            await this.reserveDB.updateOnce(newReserve).catch(err => {
+                finalize();
+                this.log.system.error(`update reservation error: ${reserveId}`);
+                throw err;
+            });
+
+            // 完了したのでロック解除
             finalize();
-            this.log.system.error(`get reservation error: ${reserveId}`);
-            throw err;
-        });
-        if (newReserve === null) {
+
+            this.log.system.info(`successful edit reservation: ${reserveId}`);
+
+            // イベント発行
+            this.reserveEvent.emitUpdated({
+                update: [newReserve],
+                isSuppressLog: false,
+            });
+        } finally {
             finalize();
-            this.log.system.error(`reservation is not found: ${reserveId}`);
-            throw new Error('ReservationIsNotFound');
         }
-
-        // option から必要な情報をセットする
-        newReserve.allowEndLack = option.allowEndLack;
-        newReserve.removeDataBroadcast = option.removeDataBroadcast === true;
-        if (typeof option.tags !== 'undefined') {
-            newReserve.tags = JSON.stringify(option.tags);
-        }
-        this.setSaveOptionToReserve(newReserve, option.saveOption);
-        this.setEncodeOptionToReserve(newReserve, option.encodeOption);
-
-        // 更新
-        await this.reserveDB.updateOnce(newReserve).catch(err => {
-            finalize();
-            this.log.system.error(`update reservation error: ${reserveId}`);
-            throw err;
-        });
-
-        // 完了したのでロック解除
-        finalize();
-
-        this.log.system.info(`successful edit reservation: ${reserveId}`);
-
-        // イベント発行
-        this.reserveEvent.emitUpdated({
-            update: [newReserve],
-            isSuppressLog: false,
-        });
     }
 
     /**
@@ -1543,41 +1607,49 @@ class ReservationManageModel implements IReservationManageModel {
     public async cleanup(): Promise<void> {
         // 実行権取得
         const exeId = await this.executeManagementModel.getExecution(ReservationManageModel.EDIT_RESERVE_PRIORITY);
+        let isReleased = false;
         const finalize = () => {
-            this.executeManagementModel.unLockExecution(exeId);
+            if (isReleased === false) {
+                isReleased = true;
+                this.executeManagementModel.unLockExecution(exeId);
+            }
         };
 
-        this.log.system.info('start reserves cleanup');
+        try {
+            this.log.system.info('start reserves cleanup');
 
-        // 古い予約を取得する
-        const deleteReserves = await this.reserveDB.findOldTime(new Date().getTime()).catch(err => {
-            finalize();
-            this.log.system.error('get delete old reservation error');
-            throw err;
-        });
-
-        // 削除
-        await this.reserveDB
-            .updateMany({
-                delete: deleteReserves,
-                isSuppressLog: false,
-            })
-            .catch(err => {
+            // 古い予約を取得する
+            const deleteReserves = await this.reserveDB.findOldTime(new Date().getTime()).catch(err => {
                 finalize();
-                this.log.system.error('delete old reservation error');
+                this.log.system.error('get delete old reservation error');
                 throw err;
             });
 
-        // 完了したのでロック解除
-        finalize();
+            // 削除
+            await this.reserveDB
+                .updateMany({
+                    delete: deleteReserves,
+                    isSuppressLog: false,
+                })
+                .catch(err => {
+                    finalize();
+                    this.log.system.error('delete old reservation error');
+                    throw err;
+                });
 
-        this.log.system.info('finish reserves cleanup');
+            // 完了したのでロック解除
+            finalize();
 
-        // イベント発行
-        this.reserveEvent.emitUpdated({
-            delete: deleteReserves,
-            isSuppressLog: false,
-        });
+            this.log.system.info('finish reserves cleanup');
+
+            // イベント発行
+            this.reserveEvent.emitUpdated({
+                delete: deleteReserves,
+                isSuppressLog: false,
+            });
+        } finally {
+            finalize();
+        }
     }
 
     /**

@@ -205,10 +205,20 @@ export default class EventSetter implements IEventSetter {
             if (isNeedDeleteReservation === true) {
                 if (reserve.ruleId === null || (reserve.ruleId !== null && reserve.isEventRelay == true)) {
                     // 手動予約 or ルール予約によるイベントリレー予約を削除
-                    this.reservationManage.cancel(reserve.id).catch(() => {});
+                    this.reservationManage.cancel(reserve.id).catch(err => {
+                        this.log.system.error(
+                            `finish recording reservation cancel failed: reserveId: ${reserve.id}, recordedId: ${recorded.id}`,
+                        );
+                        this.log.system.error(err);
+                    });
                 } else {
                     // 重複を更新するために予約更新
-                    this.reservationManage.updateRule(reserve.ruleId).catch(() => {});
+                    this.reservationManage.updateRule(reserve.ruleId).catch(err => {
+                        this.log.system.error(
+                            `finish recording reservation update failed: reserveId: ${reserve.id}, ruleId: ${reserve.ruleId}, recordedId: ${recorded.id}`,
+                        );
+                        this.log.system.error(err);
+                    });
                 }
             }
 

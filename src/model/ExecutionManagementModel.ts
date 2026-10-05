@@ -41,7 +41,13 @@ class ExecutionManagementModel implements IExecutionManagementModel {
         return new Promise<string>((resolve: (value: string) => void, reject: (err: Error) => void) => {
             // タイムアウト設定
             const timerId = setTimeout(() => {
-                this.log.system.error(`get execution error: ${priority}`);
+                const position = this.exeQueue.indexOf(exeQueueData);
+                if (position !== -1) {
+                    this.exeQueue.splice(position, 1);
+                }
+                this.log.system.error(
+                    `get execution error: ${priority}, requestId: ${exeQueueData.id}, lockId: ${this.lockId}, queueLength: ${this.exeQueue.length}`,
+                );
                 // listener から削除
                 this.exeEventEmitter.removeListener(ExecutionManagementModel.UNLOCK_EVENT, onDone);
 

@@ -108,3 +108,19 @@ appenders:
 
 `filename` や `pattern` を編集することで、出力されるログファイル名を変更することも出来ます `type` に `dateFile` を指定す
 ると、容量ではなく日付でファイルが切り替わるようになります
+
+## 実行権の取得タイムアウト
+
+`GetExecutionTimeoutError` は操作の実行権を既定の 60 秒以内に取得できなかったことを示します。
+`get execution error` の数値は優先度で、終了コードではありません。
+ログには待機要求の `requestId`、保持中の `lockId`、待機数 `queueLength` を出力します。
+タイムアウトした要求は待機キューから除去し、保持中の操作のロックは強制解除しません。
+予約操作は例外時にも実行権を解放し、後続の予約操作を妨げないようにします。
+
+録画終了後の予約更新・削除に失敗した場合は、`finish recording reservation update failed` または
+`finish recording reservation cancel failed` と対象の `reserveId`、`recordedId`、必要なら `ruleId`、
+元の例外を出力します。録画完了と予約更新の成功は別であり、このログは録画失敗を意味しません。
+失敗した操作の自動再試行は追加していません。
+
+回帰検証: `node --test scripts/test-execution-management.cjs`。
+タイムアウト後の後続実行、優先度と同優先度の順序、予約操作の例外解放、録画終了後の失敗ログを検証します。
