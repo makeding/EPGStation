@@ -21,7 +21,7 @@ const makeRetryRecorder = (overrides: Record<string, any> = {}) => ({
 const captureFailure = (harness: any, recorder: any, reserve: any) => {
     const identity = recorder.bindScheduleSession.mock.calls.at(-1)?.[0];
     expect(identity).toBeDefined();
-    return () => harness.callbacks.failed(reserve, null, identity);
+    return () => harness.callbacks.failed(reserve, null, { ...identity, isRetryable: true });
 };
 
 const waitFor = async (predicate: () => boolean, diagnostic: string): Promise<void> => {
@@ -666,10 +666,10 @@ describe('recording manager failed-recording retry', () => {
             await Promise.all([currentFailure(), currentFailure()]);
 
             expect(harness.recordedDB.findReserveId).toHaveBeenCalledTimes(2);
-            expect(provider).toHaveBeenCalledTimes(count < 3 ? 1 : 0);
-            expect(retryRecorder.setTimer).toHaveBeenCalledTimes(count < 3 ? 1 : 0);
-            expect(retryMutation).toHaveBeenCalledTimes(count < 3 ? 1 : 0);
-            expect(harness.recordingEvent.emitRecordingRetryOver).toHaveBeenCalledTimes(count >= 3 ? 1 : 0);
+            expect(provider).toHaveBeenCalledTimes(count < 5 ? 1 : 0);
+            expect(retryRecorder.setTimer).toHaveBeenCalledTimes(count < 5 ? 1 : 0);
+            expect(retryMutation).toHaveBeenCalledTimes(count < 5 ? 1 : 0);
+            expect(harness.recordingEvent.emitRecordingRetryOver).toHaveBeenCalledTimes(count >= 5 ? 1 : 0);
             expect(latestRecorder.cancel).not.toHaveBeenCalled();
         },
     );
@@ -730,10 +730,10 @@ describe('recording manager failed-recording retry', () => {
 
             const expectedRetryRecorder = mutationKind === 'update' ? latestRecorder : retryRecorder;
             expect(harness.recordedDB.findReserveId).toHaveBeenCalledOnce();
-            expect(provider).toHaveBeenCalledTimes(count < 3 ? 1 : 0);
-            expect(expectedRetryRecorder.setTimer).toHaveBeenCalledTimes(count < 3 ? 1 : 0);
-            expect(retryMutation).toHaveBeenCalledTimes(count < 3 ? 1 : 0);
-            expect(harness.recordingEvent.emitRecordingRetryOver).toHaveBeenCalledTimes(count >= 3 ? 1 : 0);
+            expect(provider).toHaveBeenCalledTimes(count < 5 ? 1 : 0);
+            expect(expectedRetryRecorder.setTimer).toHaveBeenCalledTimes(count < 5 ? 1 : 0);
+            expect(retryMutation).toHaveBeenCalledTimes(count < 5 ? 1 : 0);
+            expect(harness.recordingEvent.emitRecordingRetryOver).toHaveBeenCalledTimes(count >= 5 ? 1 : 0);
             expect(currentRecorder.cancel).not.toHaveBeenCalled();
         },
     );

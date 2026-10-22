@@ -800,7 +800,7 @@ describe('recording preparation', () => {
         expect(vi.getTimerCount()).toBe(0);
     });
 
-    it('[RE-3.7][RE-3.9][Task 3.3] performs the initial stream attempt plus three five-second retries for a reservation past its end time', async () => {
+    it('[RE-3.7][RE-3.9] does not schedule a retry when its next delay reaches the reservation end', async () => {
         vi.useFakeTimers();
         const reserve = makeReserve({ endAt: Date.now() - 1 });
         const harness = makeRecorder({
@@ -814,14 +814,8 @@ describe('recording preparation', () => {
         harness.model.bindScheduleSession(session.binding);
         await harness.model.prepRecord();
         expect(harness.streamCreator.create).toHaveBeenCalledOnce();
-        for (let expected = 2; expected <= 4; expected++) {
-            await vi.advanceTimersByTimeAsync(4_999);
-            expect(harness.streamCreator.create).toHaveBeenCalledTimes(expected - 1);
-            await vi.advanceTimersByTimeAsync(1);
-            expect(harness.streamCreator.create).toHaveBeenCalledTimes(expected);
-        }
-        expect(harness.streamCreator.create).toHaveBeenCalledTimes(4);
-        expect(harness.programDB.findId).toHaveBeenCalledTimes(4);
+        expect(harness.streamCreator.create).toHaveBeenCalledOnce();
+        expect(harness.programDB.findId).toHaveBeenCalledOnce();
         expect(harness.reserveDB.findId).not.toHaveBeenCalled();
         expect(session.binding.removeTimeSpecifiedEnd).toHaveBeenCalledOnce();
         expect(session.state.phase).toBe('Completed');
@@ -831,12 +825,12 @@ describe('recording preparation', () => {
         expect(harness.model.retryTimerId).toBeNull();
         expect(harness.recordingEvent.emitPrepRecordingFailed).toHaveBeenCalledOnce();
         await vi.advanceTimersByTimeAsync(20_000);
-        expect(harness.streamCreator.create).toHaveBeenCalledTimes(4);
+        expect(harness.streamCreator.create).toHaveBeenCalledOnce();
     });
 
-    it('[RE-3.7][RE-3.9][#724] keeps retrying a program reservation every five seconds until its end time', async () => {
+    it('[RE-3.7][RE-3.9] uses 5s, 15s, then 60s preparation retry delays', async () => {
         vi.useFakeTimers();
-        const reserve = makeReserve({ endAt: Date.now() + 22_000 });
+        const reserve = makeReserve({ endAt: Date.now() + 600_000 });
         const harness = makeRecorder({
             streamCreator: {
                 create: vi.fn(async () => Promise.reject(new Error('synthetic stream failure'))),
@@ -847,35 +841,24 @@ describe('recording preparation', () => {
         harness.model.reserve = reserve;
         harness.model.bindScheduleSession(session.binding);
         await harness.model.prepRecord();
-        await vi.advanceTimersByTimeAsync(15_000);
-
-        // 初回 + 3 回の再試行がすべて失敗しても、終了時刻前なら準備失敗にせず再試行を待つ。
-        expect(harness.streamCreator.create).toHaveBeenCalledTimes(4);
-        expect(harness.recordingEvent.emitPrepRecordingFailed).not.toHaveBeenCalled();
-        expect(session.state.phase).toBe('RetryWaiting');
-        expect(harness.model.retryTimerId).not.toBeNull();
-
-        await vi.advanceTimersByTimeAsync(4_999);
-        expect(harness.streamCreator.create).toHaveBeenCalledTimes(4);
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(harness.streamCreator.create).toHaveBeenCalledTimes(7);
+        await vi.advanceTimersByTimeAsync(14_999);
+        expect(harness.streamCreator.create).toHaveBeenCalledTimes(7);
         await vi.advanceTimersByTimeAsync(1);
-        expect(harness.streamCreator.create).toHaveBeenCalledTimes(5);
+        expect(harness.streamCreator.create).toHaveBeenCalledTimes(8);
+        await vi.advanceTimersByTimeAsync(105_000);
+        expect(harness.streamCreator.create).toHaveBeenCalledTimes(15);
+        await vi.advanceTimersByTimeAsync(59_999);
+        expect(harness.streamCreator.create).toHaveBeenCalledTimes(15);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(harness.streamCreator.create).toHaveBeenCalledTimes(16);
         expect(harness.recordingEvent.emitPrepRecordingFailed).not.toHaveBeenCalled();
         expect(session.state.phase).toBe('RetryWaiting');
-
-        // 6 回目の失敗は終了時刻の後なので、ここで初めて準備失敗にする。
-        await vi.advanceTimersByTimeAsync(5_000);
-        expect(harness.streamCreator.create).toHaveBeenCalledTimes(6);
-        expect(harness.recordingEvent.emitPrepRecordingFailed).toHaveBeenCalledOnce();
-        expect(session.binding.removeTimeSpecifiedEnd).toHaveBeenCalledOnce();
-        expect(session.state.phase).toBe('Completed');
-        expect(harness.model.isPrepRecording).toBe(false);
-        expect(harness.model.retryTimerId).toBeNull();
-        await vi.advanceTimersByTimeAsync(20_000);
-        expect(harness.streamCreator.create).toHaveBeenCalledTimes(6);
-        expect(vi.getTimerCount()).toBe(0);
+        await harness.model.cancel(false);
     });
 
-    it('[RE-3.7][#724] stops the extended program retry when the reservation is cancelled', async () => {
+    it('[RE-3.7] stops the backoff retry when the reservation is cancelled', async () => {
         vi.useFakeTimers();
         const reserve = makeReserve({ endAt: Date.now() + 600_000 });
         const harness = makeRecorder({
@@ -889,7 +872,7 @@ describe('recording preparation', () => {
         harness.model.bindScheduleSession(session.binding);
         await harness.model.prepRecord();
         await vi.advanceTimersByTimeAsync(40_000);
-        expect(harness.streamCreator.create).toHaveBeenCalledTimes(9);
+        expect(harness.streamCreator.create).toHaveBeenCalledTimes(7);
         expect(session.state.phase).toBe('RetryWaiting');
 
         const cancellation = harness.model.cancel(false);
@@ -901,11 +884,11 @@ describe('recording preparation', () => {
         expect(harness.model.retryAttempt).toBeNull();
         expect(harness.recordingEvent.emitPrepRecordingFailed).not.toHaveBeenCalled();
         await vi.advanceTimersByTimeAsync(60_000);
-        expect(harness.streamCreator.create).toHaveBeenCalledTimes(9);
+        expect(harness.streamCreator.create).toHaveBeenCalledTimes(7);
         expect(vi.getTimerCount()).toBe(0);
     });
 
-    it('[RE-3.7][RE-3.9][#724] follows an end time that changes while the program retry is waiting', async () => {
+    it('[RE-3.7][RE-3.9] follows an end time that changes while the program retry is waiting', async () => {
         vi.useFakeTimers();
         const reserve = makeReserve({ endAt: Date.now() + 22_000 });
         const harness = makeRecorder({
@@ -924,22 +907,22 @@ describe('recording preparation', () => {
         // 終了時刻が延びたら、元の終了時刻を過ぎても再試行を続ける。
         await harness.model.update(makeReserve({ ...reserve, endAt: Date.now() + 40_000 }), false);
         await vi.advanceTimersByTimeAsync(25_000);
-        expect(harness.streamCreator.create).toHaveBeenCalledTimes(9);
+        expect(harness.streamCreator.create).toHaveBeenCalledTimes(7);
         expect(harness.recordingEvent.emitPrepRecordingFailed).not.toHaveBeenCalled();
         expect(session.state.phase).toBe('RetryWaiting');
 
         // 終了時刻が縮んで過ぎたら、次の失敗で準備失敗にする。
         await harness.model.update(makeReserve({ ...reserve, endAt: Date.now() - 1 }), false);
         await vi.advanceTimersByTimeAsync(5_000);
-        expect(harness.streamCreator.create).toHaveBeenCalledTimes(10);
+        expect(harness.streamCreator.create).toHaveBeenCalledTimes(8);
         expect(harness.recordingEvent.emitPrepRecordingFailed).toHaveBeenCalledOnce();
         expect(session.state.phase).toBe('Completed');
         expect(harness.model.retryTimerId).toBeNull();
         await vi.advanceTimersByTimeAsync(20_000);
-        expect(harness.streamCreator.create).toHaveBeenCalledTimes(10);
+        expect(harness.streamCreator.create).toHaveBeenCalledTimes(8);
     });
 
-    it('[RE-3.7][RE-3.9][#724] keeps the four-attempt limit for a time-specified reservation', async () => {
+    it('[RE-3.7][RE-3.9] applies the same bounded backoff to a time-specified reservation', async () => {
         vi.useFakeTimers();
         const reserve = makeReserve({ programId: null, isTimeSpecified: true, endAt: Date.now() + 600_000 });
         const harness = makeRecorder({
@@ -952,19 +935,18 @@ describe('recording preparation', () => {
         harness.model.reserve = reserve;
         harness.model.bindScheduleSession(session.binding);
         await harness.model.prepRecord();
-        await vi.advanceTimersByTimeAsync(15_000);
+        await vi.advanceTimersByTimeAsync(30_000);
 
-        expect(harness.streamCreator.create).toHaveBeenCalledTimes(4);
-        expect(harness.recordingEvent.emitPrepRecordingFailed).toHaveBeenCalledOnce();
-        expect(session.state.phase).toBe('Completed');
-        await vi.advanceTimersByTimeAsync(20_000);
-        expect(harness.streamCreator.create).toHaveBeenCalledTimes(4);
+        expect(harness.streamCreator.create).toHaveBeenCalledTimes(7);
+        expect(harness.recordingEvent.emitPrepRecordingFailed).not.toHaveBeenCalled();
+        expect(session.state.phase).toBe('RetryWaiting');
+        await harness.model.cancel(false);
     });
 
     describe('[RE-3.2][RE-3.7][RE-3.9] recording file path selection failure after the stream is acquired', () => {
         const pathFailure = (): Error => Object.assign(new Error('synthetic ENAMETOOLONG'), { code: 'ENAMETOOLONG' });
 
-        it('retries a program reservation every five seconds and reports the failure once at the end time', async () => {
+        it('retries a program reservation with backoff and reports the failure once at the end time', async () => {
             vi.useFakeTimers();
             const reserve = makeReserve({ endAt: Date.now() + 22_000 });
             const harness = makeRecorder({
@@ -994,7 +976,7 @@ describe('recording preparation', () => {
             expect(harness.streamCreator.create).toHaveBeenCalledTimes(attempts);
         });
 
-        it('keeps the four-attempt limit for a time-specified reservation and reports the failure once', async () => {
+        it('keeps retrying a time-specified path failure with the bounded backoff', async () => {
             vi.useFakeTimers();
             const reserve = makeReserve({ programId: null, isTimeSpecified: true, endAt: Date.now() + 600_000 });
             const harness = makeRecorder({
@@ -1004,14 +986,13 @@ describe('recording preparation', () => {
             harness.model.reserve = reserve;
             harness.model.bindScheduleSession(session.binding);
             await harness.model.prepRecord();
-            await vi.advanceTimersByTimeAsync(15_000);
+            await vi.advanceTimersByTimeAsync(30_000);
 
-            expect(harness.streamCreator.create).toHaveBeenCalledTimes(4);
-            expect(harness.recordingUtil.getRecPath).toHaveBeenCalledTimes(4);
-            expect(harness.recordingEvent.emitPrepRecordingFailed).toHaveBeenCalledOnce();
-            expect(session.state.phase).toBe('Completed');
-            await vi.advanceTimersByTimeAsync(20_000);
-            expect(harness.streamCreator.create).toHaveBeenCalledTimes(4);
+            expect(harness.streamCreator.create).toHaveBeenCalledTimes(7);
+            expect(harness.recordingUtil.getRecPath).toHaveBeenCalledTimes(7);
+            expect(harness.recordingEvent.emitPrepRecordingFailed).not.toHaveBeenCalled();
+            expect(session.state.phase).toBe('RetryWaiting');
+            await harness.model.cancel(false);
         });
     });
 
@@ -1057,24 +1038,24 @@ describe('recording preparation', () => {
 
             // 5 回目以降の失敗は、1 分たつまで記録せず、再試行の開始も記録しない。
             await vi.advanceTimersByTimeAsync(59_999);
-            expect(harness.streamCreator.create).toHaveBeenCalledTimes(15);
+            expect(harness.streamCreator.create).toHaveBeenCalledTimes(9);
             expect(vi.mocked(logger.system.error).mock.calls.length).toBe(errorCallsAfterFour);
             expect(startLogCount()).toBe(4);
 
             // 直前の記録から 60,000 ms たった失敗で、回数と最後のエラーを 1 回にまとめる。
             await vi.advanceTimersByTimeAsync(1);
-            expect(harness.streamCreator.create).toHaveBeenCalledTimes(16);
+            expect(harness.streamCreator.create).toHaveBeenCalledTimes(10);
             expect(vi.mocked(logger.system.error).mock.calls.slice(errorCallsAfterFour)).toEqual([
-                ['preprec failed: 1 (12 failures since the last log, 16 in total)'],
-                [errors[15]],
+                ['preprec failed: 1 (6 failures since the last log, 10 in total)'],
+                [errors[9]],
             ]);
 
             // 次のまとめも 60 秒後に 1 回だけ書く。
             await vi.advanceTimersByTimeAsync(60_000);
-            expect(harness.streamCreator.create).toHaveBeenCalledTimes(28);
+            expect(harness.streamCreator.create).toHaveBeenCalledTimes(14);
             expect(vi.mocked(logger.system.error).mock.calls.slice(errorCallsAfterFour + 2)).toEqual([
-                ['preprec failed: 1 (12 failures since the last log, 28 in total)'],
-                [errors[27]],
+                ['preprec failed: 1 (4 failures since the last log, 14 in total)'],
+                [errors[13]],
             ]);
             expect(harness.recordingEvent.emitPrepRecordingFailed).not.toHaveBeenCalled();
             expect(startLogCount()).toBe(4);
@@ -1096,15 +1077,15 @@ describe('recording preparation', () => {
             await harness.model.prepRecord();
             await vi.advanceTimersByTimeAsync(25_000);
 
-            expect(harness.streamCreator.create).toHaveBeenCalledTimes(6);
+            expect(harness.streamCreator.create).toHaveBeenCalledTimes(5);
             expect(harness.recordingEvent.emitPrepRecordingFailed).toHaveBeenCalledOnce();
             const summary = vi
                 .mocked(logger.system.error)
                 .mock.calls.findIndex(
-                    ([message]) => message === 'preprec failed: 1 (2 failures since the last log, 6 in total)',
+                    ([message]) => message === 'preprec failed: 1 (1 failures since the last log, 5 in total)',
                 );
             expect(summary).toBeGreaterThanOrEqual(0);
-            expect(vi.mocked(logger.system.error).mock.calls[summary + 1]).toEqual([errors[5]]);
+            expect(vi.mocked(logger.system.error).mock.calls[summary + 1]).toEqual([errors[4]]);
             expect(vi.mocked(logger.system.error).mock.invocationCallOrder[summary]).toBeLessThan(
                 vi.mocked(harness.recordingEvent.emitPrepRecordingFailed).mock.invocationCallOrder[0],
             );
@@ -1284,10 +1265,10 @@ describe('recording preparation', () => {
 
             expect(failedLogCount()).toBe(0);
             expect(vi.mocked(logger.system.error)).not.toHaveBeenCalled();
-            await vi.advanceTimersByTimeAsync(60_000);
+            await vi.advanceTimersByTimeAsync(70_000);
             expect(vi.mocked(logger.system.error).mock.calls).toEqual([
-                ['preprec failed: 1 (13 failures since the last log, 17 in total)'],
-                [errors[12]],
+                ['preprec failed: 1 (7 failures since the last log, 11 in total)'],
+                [errors[6]],
             ]);
 
             harness.model.destroyStream();
@@ -1295,7 +1276,7 @@ describe('recording preparation', () => {
             vi.clearAllTimers();
         });
 
-        it('keeps logging every failure of a time-specified reservation', async () => {
+        it('uses the same failure aggregation for a time-specified reservation', async () => {
             vi.useFakeTimers();
             vi.mocked(logger.system.error).mockClear();
             const reserve = makeReserve({ programId: null, isTimeSpecified: true, endAt: Date.now() + 600_000 });
@@ -1306,7 +1287,7 @@ describe('recording preparation', () => {
             await harness.model.prepRecord();
             await vi.advanceTimersByTimeAsync(15_000);
 
-            expect(harness.recordingEvent.emitPrepRecordingFailed).toHaveBeenCalledOnce();
+            expect(harness.recordingEvent.emitPrepRecordingFailed).not.toHaveBeenCalled();
             expect(failedLogCount()).toBe(4);
             expect(
                 vi

@@ -18,10 +18,10 @@ const makeRetryRecorder = (overrides: Record<string, any> = {}) => ({
     ...overrides,
 });
 
-const captureFailure = (harness: any, recorder: any, reserve: any) => {
+const captureFailure = (harness: any, recorder: any, reserve: any, isRetryable = true) => {
     const identity = recorder.bindScheduleSession.mock.calls.at(-1)?.[0];
     expect(identity).toBeDefined();
-    return () => harness.callbacks.failed(reserve, null, identity);
+    return () => harness.callbacks.failed(reserve, null, { ...identity, isRetryable });
 };
 
 afterEach(() => {
@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 describe('recording retry policy', () => {
-    it.each([0, 1, 2, 3, 4, 7])(
+    it.each([0, 1, 2, 3, 4, 5, 7])(
         '[RE-6.1][RE-6.3][RE-6.4][Task 6.3] applies the exact retry boundary after %i prior results',
         async count => {
             const now = Date.now();
@@ -52,10 +52,10 @@ describe('recording retry policy', () => {
 
             expect(retry.recordedDB.findReserveId).toHaveBeenCalledOnce();
             expect(retry.recordedDB.findReserveId).toHaveBeenCalledWith(51);
-            expect(provider).toHaveBeenCalledTimes(count < 3 ? 1 : 0);
-            expect(replacement.setTimer).toHaveBeenCalledTimes(count < 3 ? 1 : 0);
-            expect(retry.recordingEvent.emitRecordingRetryOver).toHaveBeenCalledTimes(count >= 3 ? 1 : 0);
-            if (count < 3) {
+            expect(provider).toHaveBeenCalledTimes(count < 5 ? 1 : 0);
+            expect(replacement.setTimer).toHaveBeenCalledTimes(count < 5 ? 1 : 0);
+            expect(retry.recordingEvent.emitRecordingRetryOver).toHaveBeenCalledTimes(count >= 5 ? 1 : 0);
+            if (count < 5) {
                 const current = retry.model.scheduleController.getSessionSnapshot(reserve.id);
                 expect(current).toMatchObject({ phase: 'Waiting' });
                 expect(current.generation).not.toBe(failedSession.generation);
@@ -63,6 +63,26 @@ describe('recording retry policy', () => {
             }
         },
     );
+
+    it('does not retry a non-retryable recording output failure', async () => {
+        const reserve = makeReserve({ id: 56 });
+        const initial = makeRetryRecorder();
+        const replacement = makeRetryRecorder();
+        const provider = vi.fn().mockResolvedValueOnce(initial).mockResolvedValueOnce(replacement);
+        const harness = trackManager(makeManager({ provider }));
+        await harness.model.update({ insert: [reserve], isSuppressLog: false });
+        const fail = captureFailure(harness, initial, reserve, false);
+        harness.recordedDB.findReserveId.mockResolvedValue([]);
+        provider.mockClear();
+
+        await fail();
+
+        expect(harness.recordedDB.findReserveId).toHaveBeenCalledWith(reserve.id);
+        expect(provider).not.toHaveBeenCalled();
+        expect(replacement.setTimer).not.toHaveBeenCalled();
+        expect(harness.recordingEvent.emitRecordingRetryOver).toHaveBeenCalledWith(reserve);
+        expect(logger.system.error).toHaveBeenCalledWith(`recording failed without retry: ${reserve.id}`);
+    });
 
     it('[Task 6.3] propagates query failure before creating a replacement', async () => {
         const reserve = makeReserve({ id: 52 });

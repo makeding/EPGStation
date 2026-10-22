@@ -355,7 +355,7 @@ describe('[RE-9.4] recorder prepRecord', () => {
             const harness = failingRecorder(reserve);
             const token = harness.model.retryLifecycleToken;
 
-            await harness.model.runPreparation(3, null);
+            await harness.model.runPreparation(30, null);
 
             expect(harness.recordingEvent.emitPrepRecordingFailed).toHaveBeenCalledTimes(1);
             expect(harness.recordingEvent.emitPrepRecordingFailed).toHaveBeenCalledWith(reserve);
@@ -365,14 +365,14 @@ describe('[RE-9.4] recorder prepRecord', () => {
         });
 
         it('keeps retrying a reservation that ends later than now', async () => {
-            const reserve = makeReserve({ startAt: NOW - 60_000, endAt: NOW + 1, isTimeSpecified: false });
+            const reserve = makeReserve({ startAt: NOW - 60_000, endAt: NOW + 60_001, isTimeSpecified: false });
             const harness = failingRecorder(reserve);
 
-            await harness.model.runPreparation(3, null);
+            await harness.model.runPreparation(29, null);
 
             expect(harness.recordingEvent.emitPrepRecordingFailed).not.toHaveBeenCalled();
             expect(harness.model.retryTimerId).not.toBeNull();
-            expect(harness.model.retryAttempt).toBe(4);
+            expect(harness.model.retryAttempt).toBe(30);
             harness.model.invalidateRetry();
         });
     });

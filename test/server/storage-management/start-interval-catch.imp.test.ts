@@ -27,15 +27,15 @@ describe('StorageManageModel.start interval catch (unittest/imp)', () => {
         manager.start();
         expect(manager.timerId).not.toBeNull();
         expect(logger.system.error).not.toHaveBeenCalled();
-        expect(manager.check).not.toHaveBeenCalled();
+        expect(manager.check).toHaveBeenCalledOnce();
 
         await vi.advanceTimersByTimeAsync(1_000);
         await settleMicrotasks();
 
-        expect(manager.check).toHaveBeenCalledOnce();
+        expect(manager.check).toHaveBeenCalledTimes(2);
         expect(logger.system.error).toHaveBeenCalledWith('disk check error');
         expect(logger.system.error).toHaveBeenCalledWith(checkFailure);
-        expect(logger.system.error).toHaveBeenCalledTimes(2);
+        expect(logger.system.error).toHaveBeenCalledTimes(4);
 
         manager.stop();
         expect(vi.getTimerCount()).toBe(0);

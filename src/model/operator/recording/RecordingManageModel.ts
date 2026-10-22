@@ -410,9 +410,10 @@ class RecordingManageModel implements IRecordingManageModel {
     /**
      * 録画失敗イベントを処理する。同じ予約について既に削除処理中、起動未完了、二重イベント
      * （`recordingFailureClaims`で検知）のいずれかであれば何もしない。失敗が現在のsessionに
-     * 対するものであることを確認したうえで、DB上の録画済み件数が3件未満かつ予約終了時刻を
-     * まだ過ぎていなければ同じ予約を候補として再投入（リトライ）し、そうでなければリトライを
-     * 諦めて`emitRecordingRetryOver`で通知する。
+     * 対するものであることを確認したうえで、再試行可能な失敗についてだけ、DB上の録画済み件数が
+     * `RECORDING_ATTEMPT_LIMIT`未満かつ予約終了時刻をまだ過ぎていなければ同じ予約を候補として
+     * 再投入（リトライ）する。書き込み失敗など再試行不能な失敗、または上限到達時は
+     * `emitRecordingRetryOver`で通知する。
      * @param reserve 失敗した予約
      * @param failedIdentity 失敗イベント発行時点のsession識別情報（世代・token等）。
      *   `undefined`または現在のsessionと一致しない場合は既に無効な通知として無視する。
@@ -430,7 +431,7 @@ class RecordingManageModel implements IRecordingManageModel {
         const recordeds = await this.recordedDB.findReserveId(reserve.id);
         if (!this.isCurrentRecordingFailure(failedIdentity)) return;
 
-        if (recordeds.length < 3) {
+        if (failedIdentity.isRetryable === true && recordeds.length < RecordingManageModel.RECORDING_ATTEMPT_LIMIT) {
             if (failedIdentity.reservation.endAt <= Date.now()) {
                 this.log.system.error(`readd recording error: ${reserve.id}`);
                 return;
@@ -446,7 +447,11 @@ class RecordingManageModel implements IRecordingManageModel {
             return;
         }
 
-        this.log.system.error(`recording retry over: ${reserve.id}`);
+        this.log.system.error(
+            failedIdentity.isRetryable === true
+                ? `recording retry over: ${reserve.id}`
+                : `recording failed without retry: ${reserve.id}`,
+        );
         this.recordingEvent.emitRecordingRetryOver(reserve);
     }
 
@@ -998,6 +1003,10 @@ class RecordingManageModel implements IRecordingManageModel {
             this.recordingIndex[key].resetTimer();
         }
     }
+}
+
+namespace RecordingManageModel {
+    export const RECORDING_ATTEMPT_LIMIT = 5;
 }
 
 export default RecordingManageModel;

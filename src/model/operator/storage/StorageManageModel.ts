@@ -1,15 +1,16 @@
 import { ChildProcess, spawn } from 'child_process';
 import diskusage from 'diskusage-ng';
-import { inject, injectable } from 'inversify';
+import { inject, injectable, optional } from 'inversify';
 import ProcessUtil from '../../../util/ProcessUtil.js';
 import Util from '../../../util/Util.js';
-import IConfigFile, { RecordedDirInfo } from '../../IConfigFile.js';
+import IConfigFile, { RecordedDirInfo, StorageWarningLevel } from '../../IConfigFile.js';
 import IConfiguration from '../../IConfiguration.js';
 import ILogger from '../../ILogger.js';
 import ILoggerModel from '../../ILoggerModel.js';
 import IRecordedStorageDeletionPort from './IRecordedStorageDeletionPort.js';
 import IStorageDeletionCandidatePort from './IStorageDeletionCandidatePort.js';
 import IStorageManageModel from './IStorageManageModel.js';
+import INotificationManageModel from '../notification/INotificationManageModel.js';
 import IStorageRecordedUseSnapshotPort from './IStorageRecordedUseSnapshotPort.js';
 
 const STORAGE_OPERATION_WATCHDOG_MS = 600_000;
@@ -23,7 +24,6 @@ interface StorageEntryId {
 }
 
 type ActiveStorageOperation = object;
-type MonitoredStorageEntry = RecordedDirInfo & { readonly limitThreshold: number };
 
 interface StorageLimitCommandOperation {
     readonly observationDone: Promise<'terminal' | 'spawn-failure'>;
@@ -68,6 +68,8 @@ export default class StorageManageModel implements IStorageManageModel {
     /** `entryIds`に無い出現（起動後のconfig変化等、通常は起こらない想定外のケース）用に、
      *  一意な識別子を発行し続けるための減算カウンタ。 */
     private fallbackEntryIndex: number = -1;
+    private readonly notificationManage?: INotificationManageModel;
+    private readonly warningLevels = new Map<string, StorageWarningLevel | null>();
 
     protected get isRunning(): boolean {
         return this.activeOperations.size !== 0;
@@ -79,12 +81,14 @@ export default class StorageManageModel implements IStorageManageModel {
         @inject('IStorageDeletionCandidatePort') candidatePort: IStorageDeletionCandidatePort,
         @inject('IRecordedStorageDeletionPort') deletionPort: IRecordedStorageDeletionPort,
         @inject('IStorageRecordedUseSnapshotPort') recordedUseSnapshotPort: IStorageRecordedUseSnapshotPort,
+        @inject('INotificationManageModel') @optional() notificationManage?: INotificationManageModel,
     ) {
         this.log = logger.getLogger();
         this.config = configuration.getConfig();
         this.candidatePort = candidatePort;
         this.deletionPort = deletionPort;
         this.recordedUseSnapshotPort = recordedUseSnapshotPort;
+        this.notificationManage = notificationManage;
         this.commandTimeoutMs = this.normalizeCommandTimeout(this.config.storageLimitCommandTimeoutMs);
         this.config.recorded.forEach((entry, snapshotIndex) => {
             const entryIds = this.entryIds.get(entry) ?? [];
@@ -99,7 +103,11 @@ export default class StorageManageModel implements IStorageManageModel {
     public start(): void {
         const checkList: RecordedDirInfo[] = [];
         for (const r of this.config.recorded) {
-            if (typeof r.limitThreshold !== 'undefined') {
+            if (
+                typeof r.warningThreshold !== 'undefined' ||
+                typeof r.criticalThreshold !== 'undefined' ||
+                typeof r.limitThreshold !== 'undefined'
+            ) {
                 checkList.push(r);
             }
         }
@@ -109,12 +117,14 @@ export default class StorageManageModel implements IStorageManageModel {
             return;
         }
 
-        this.timerId = setInterval(async () => {
+        const runCheck = async (): Promise<void> => {
             await this.check(checkList).catch(err => {
                 this.log.system.error('disk check error');
                 this.log.system.error(err);
             });
-        }, this.config.storageLimitCheckIntervalTime * 1000);
+        };
+        void runCheck();
+        this.timerId = setInterval(runCheck, this.config.storageLimitCheckIntervalTime * 1000);
     }
 
     /**
@@ -128,10 +138,6 @@ export default class StorageManageModel implements IStorageManageModel {
         for (const l of list) {
             const occurrenceIndex = occurrenceIndexes.get(l) ?? 0;
             occurrenceIndexes.set(l, occurrenceIndex + 1);
-            if (typeof l.limitThreshold === 'undefined') {
-                continue;
-            }
-
             const entryId = this.getEntryId(l, occurrenceIndex);
             if (this.activeOperations.has(entryId)) {
                 continue;
@@ -139,7 +145,7 @@ export default class StorageManageModel implements IStorageManageModel {
 
             const operation: ActiveStorageOperation = {};
             this.activeOperations.set(entryId, operation);
-            const pending = this.checkEntry(l as MonitoredStorageEntry, entryId, operation);
+            const pending = this.checkEntry(l, entryId, operation);
             const release = () => {
                 if (this.activeOperations.get(entryId) === operation) {
                     this.activeOperations.delete(entryId);
@@ -152,8 +158,31 @@ export default class StorageManageModel implements IStorageManageModel {
         await Promise.all(startedOperations);
     }
 
+    private updateStorageWarning(entry: RecordedDirInfo, free: number): void {
+        const current: { level: StorageWarningLevel; threshold: number } | null =
+            typeof entry.limitThreshold === 'number' && free <= entry.limitThreshold
+                ? { level: 'limit', threshold: entry.limitThreshold }
+                : typeof entry.criticalThreshold === 'number' && free <= entry.criticalThreshold
+                  ? { level: 'critical', threshold: entry.criticalThreshold }
+                  : typeof entry.warningThreshold === 'number' && free <= entry.warningThreshold
+                    ? { level: 'warning', threshold: entry.warningThreshold }
+                    : null;
+        const previous = this.warningLevels.get(entry.path) ?? null;
+        this.warningLevels.set(entry.path, current?.level ?? null);
+        const severity: Record<StorageWarningLevel, number> = { warning: 1, critical: 2, limit: 3 };
+        if (current !== null && (previous === null || severity[current.level] > severity[previous])) {
+            this.notificationManage?.addStorageWarning({
+                level: current.level,
+                name: entry.name,
+                path: entry.path,
+                free,
+                threshold: current.threshold,
+            });
+        }
+    }
+
     private async checkEntry(
-        l: MonitoredStorageEntry,
+        l: RecordedDirInfo,
         entryId: StorageEntryId,
         operation: ActiveStorageOperation,
     ): Promise<void> {
@@ -167,6 +196,8 @@ export default class StorageManageModel implements IStorageManageModel {
             return;
         }
         let freeMb = availableBytes / 1024 / 1024;
+        this.updateStorageWarning(l, freeMb);
+        if (typeof l.limitThreshold === 'undefined') return;
 
         // 空き容量が閾値を超えたか
         if (freeMb > l.limitThreshold) {

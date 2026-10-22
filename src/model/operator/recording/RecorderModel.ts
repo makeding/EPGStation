@@ -216,6 +216,9 @@ class RecorderModel implements IRecorderModel {
     private retryTimerId: NodeJS.Timeout | null = null;
     /** 現在待機中のリトライの試行回数（待機中でなければ`null`）。 */
     private retryAttempt: number | null = null;
+    /** 現在待機中のリトライが発火する予定時刻（待機中でなければ`null`）。session再bind時にも
+     *  元の待ち時間を延長せず引き継ぐために使う。 */
+    private retryDueAt: number | null = null;
     /** `invalidateRetry`のたびに増分される世代カウンタ。リトライタイマー発火時、
      *  発行時点からこの値が変わっていれば（別の理由で無効化された）発火を無視する。 */
     private retryLifecycleToken = 0n;
@@ -338,6 +341,7 @@ class RecorderModel implements IRecorderModel {
             this.retryTimerId !== null
                 ? this.retryAttempt
                 : null;
+        const retryDelay = retryAttempt === null ? null : Math.max(0, (this.retryDueAt ?? Date.now()) - Date.now());
         const invalidatesRetry =
             bindingChanged ||
             binding.phase === 'Finishing' ||
@@ -349,7 +353,7 @@ class RecorderModel implements IRecorderModel {
             clearTimeout(this.timerId);
             this.timerId = null;
         }
-        if (retryAttempt !== null) this.scheduleRetry(retryAttempt, binding, 'RetryWaiting');
+        if (retryAttempt !== null) this.scheduleRetry(retryAttempt, binding, 'RetryWaiting', retryDelay ?? 0);
     }
 
     /**
@@ -626,12 +630,18 @@ class RecorderModel implements IRecorderModel {
             const currentRetrySession =
                 scheduledSession === null ? null : this.currentScheduleBinding(expectedSessionToken);
 
-            // 再試行回数が残っているか、番組指定予約で終了時刻前であれば5秒後に再試行する。
-            // 番組指定予約のストリームは放送波上で番組が始まるまで応答しないため、放送開始の遅れで回数を使い切っても終了時刻まで待つ。
-            const willRetry = retry < 3 || (!this.reserve.isTimeSpecified && this.reserve.endAt > Date.now());
+            const retryDelay =
+                retry < 6
+                    ? RecorderModel.PREP_RETRY_SHORT_DELAY_MS
+                    : retry < 14
+                      ? RecorderModel.PREP_RETRY_MEDIUM_DELAY_MS
+                      : RecorderModel.PREP_RETRY_LONG_DELAY_MS;
+            // forkの録画準備方針を維持する。最大30回まで、初期失敗は短く、その後は段階的に
+            // 間隔を広げる。ただし次回実行時刻が予約終了時刻以上なら待たずに失敗を確定する。
+            const willRetry = retry < RecorderModel.PREP_RETRY_LIMIT && Date.now() + retryDelay < this.reserve.endAt;
             this.logPrepFailure(retry, err, willRetry);
             if (willRetry) {
-                this.scheduleRetry(retry + 1, currentRetrySession, currentRetryPhase);
+                this.scheduleRetry(retry + 1, currentRetrySession, currentRetryPhase, retryDelay);
             } else {
                 this.isPrepRecording = false;
                 const currentSchedule = this.currentScheduleBinding(expectedSessionToken);
@@ -2994,7 +3004,7 @@ class RecorderModel implements IRecorderModel {
     }
 
     /**
-     * 録画準備の失敗を受けて、5秒後に`runPreparation`を再試行するタイマーをセットする
+     * 録画準備の失敗を受けて、指定時間後に`runPreparation`を再試行するタイマーをセットする
      * （sessionがあれば`RetryWaiting`へ遷移させたうえで）。`retryLifecycleToken`を進めて
      * 直前の（無効化されるべき）リトライ待ちを失効させてから新しい待ちを開始する。
      * タイマー発火時、token・タイマーid・試行回数のいずれかが発火時点と食い違っていれば
@@ -3002,11 +3012,13 @@ class RecorderModel implements IRecorderModel {
      * @param attempt 今回のリトライの試行回数
      * @param scheduledSession 対象のsession（`null`ならphase遷移をせずに待つだけ）
      * @param currentPhase 遷移元として期待するphase（一致しなければ何もしない）
+     * @param delayMs 再試行までの待ち時間
      */
     private scheduleRetry(
         attempt: number,
         scheduledSession: RecordingScheduleSessionBinding | null,
         currentPhase: RecordingScheduleSessionBinding['phase'] | null,
+        delayMs: number = RecorderModel.PREP_RETRY_SHORT_DELAY_MS,
     ): void {
         if (scheduledSession !== null) {
             if (currentPhase === null) return;
@@ -3020,6 +3032,7 @@ class RecorderModel implements IRecorderModel {
         this.invalidateRetry();
         const retryToken = this.retryLifecycleToken;
         this.retryAttempt = attempt;
+        this.retryDueAt = Date.now() + delayMs;
         const timer = setTimeout(() => {
             if (
                 this.retryTimerId !== timer ||
@@ -3030,6 +3043,7 @@ class RecorderModel implements IRecorderModel {
             }
             this.retryTimerId = null;
             this.retryAttempt = null;
+            this.retryDueAt = null;
             if (
                 scheduledSession !== null &&
                 (!this.isCurrentScheduleBinding(scheduledSession, 'RetryWaiting') ||
@@ -3038,7 +3052,7 @@ class RecorderModel implements IRecorderModel {
                 return;
             }
             void this.runPreparation(attempt, scheduledSession);
-        }, 5_000);
+        }, delayMs);
         timer.unref?.();
         this.retryTimerId = timer;
     }
@@ -3048,6 +3062,7 @@ class RecorderModel implements IRecorderModel {
     private invalidateRetry(): void {
         this.retryLifecycleToken += 1n;
         this.retryAttempt = null;
+        this.retryDueAt = null;
         if (this.retryTimerId === null) return;
         clearTimeout(this.retryTimerId);
         this.retryTimerId = null;
@@ -3259,6 +3274,10 @@ namespace RecorderModel {
     export const START_RECORDING_EVENT = 'StartRecordingEvent';
     export const EVENT_RELAY_CHECK_TIME = 20 * 1000; // イベントリレーの確認時間 20秒
     export const PRE_NOTIFY_MINUTES_DEFAULT = 15;
+    export const PREP_RETRY_LIMIT = 30;
+    export const PREP_RETRY_SHORT_DELAY_MS = 5_000;
+    export const PREP_RETRY_MEDIUM_DELAY_MS = 15_000;
+    export const PREP_RETRY_LONG_DELAY_MS = 60_000;
 }
 
 export default RecorderModel;

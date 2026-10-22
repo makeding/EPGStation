@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { randomUUID } from 'node:crypto';
 import { inject, injectable, optional } from 'inversify';
 import * as path from 'path';
 import type * as apid from '../../../../api.js';
@@ -258,9 +259,14 @@ class RecordingUtilModel implements IRecordingUtilModel {
                 });
         }
 
+        const extension =
+            reserve.channelType === 'BS4K' && this.config.recordedBS4KFormat === 'mmts'
+                ? '.mmts'
+                : this.config.recordedFileExtension;
+
         if (isReserveFile === true) {
             for (let conflict = 0; ; conflict += 1) {
-                const newFileName = this.getConflictFileName(fileName, this.config.recordedFileExtension, conflict);
+                const newFileName = this.getConflictFileName(fileName, extension, conflict);
                 const fullPath = path.join(parentDir.path, subDir, newFileName);
                 let fileHandle: fs.promises.FileHandle;
                 try {
@@ -279,7 +285,7 @@ class RecordingUtilModel implements IRecordingUtilModel {
             }
         }
 
-        const newFileName = await this.getFileName(parentDir.path, subDir, fileName, this.config.recordedFileExtension);
+        const newFileName = await this.getFileName(parentDir.path, subDir, fileName, extension);
 
         return {
             parendDir: parentDir,
@@ -545,6 +551,8 @@ class RecordingUtilModel implements IRecordingUtilModel {
         }
         const jaDate = DateUtil.getJaDate(new Date(src.startAt));
 
+        const uuid = randomUUID();
+
         return format
             .replace(/%YEAR%/g, DateUtil.format(jaDate, 'yyyy'))
             .replace(/%SHORTYEAR%/g, DateUtil.format(jaDate, 'YY'))
@@ -562,7 +570,8 @@ class RecordingUtilModel implements IRecordingUtilModel {
             .replace(/%SID%/g, sid)
             .replace(/%ID%/g, id.toString())
             .replace(/%TITLE%/g, programName === null ? 'NULL' : programName)
-            .replace(/%HALF_WIDTH_TITLE%/g, src.halfWidthName === null ? 'NULL' : src.halfWidthName);
+            .replace(/%HALF_WIDTH_TITLE%/g, src.halfWidthName === null ? 'NULL' : src.halfWidthName)
+            .replace(/%UUID%/g, uuid);
     }
 }
 

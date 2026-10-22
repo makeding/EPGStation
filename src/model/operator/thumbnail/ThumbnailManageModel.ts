@@ -1,6 +1,6 @@
 import { ChildProcess, spawn } from 'child_process';
 import * as fs from 'fs';
-import { inject, injectable } from 'inversify';
+import { inject, injectable, optional } from 'inversify';
 import * as path from 'path';
 import type * as apid from '../../../../api.js';
 import Thumbnail from '../../../db/entities/Thumbnail.js';
@@ -9,6 +9,7 @@ import FileUtil from '../../../util/FileUtil.js';
 import ProcessUtil from '../../../util/ProcessUtil.js';
 import IVideoUtil from '../../api/video/IVideoUtil.js';
 import IRecordedDB from '../../db/IRecordedDB.js';
+import IChannelDB from '../../db/IChannelDB.js';
 import IThumbnailDB from '../../db/IThumbnailDB.js';
 import IVideoFileDB from '../../db/IVideoFileDB.js';
 import IThumbnailEvent from '../../event/IThumbnailEvent.js';
@@ -101,6 +102,7 @@ export default class ThumbnailManageModel implements IThumbnailManageModel {
     private config: IConfigFile;
     private queue: IPromiseQueue;
     private recordedDB: IRecordedDB;
+    private channelDB?: IChannelDB;
     private videoFileDB: IVideoFileDB;
     private thumbnailDB: IThumbnailDB;
     private thumbnailEvent: IThumbnailEvent;
@@ -130,12 +132,14 @@ export default class ThumbnailManageModel implements IThumbnailManageModel {
         @inject('IThumbnailDB') thumbnailDB: IThumbnailDB,
         @inject('IThumbnailEvent') thumbnailEvent: IThumbnailEvent,
         @inject('IVideoUtil') videoUtil: IVideoUtil,
+        @inject('IChannelDB') @optional() channelDB?: IChannelDB,
     ) {
         this.log = logger.getLogger();
         this.config = configuration.getConfig();
         this.thumbnailMaxPending = this.config.thumbnailMaxPending ?? ThumbnailManageModel.DEFAULT_MAX_PENDING;
         this.queue = queue;
         this.recordedDB = recordedDB;
+        this.channelDB = channelDB;
         this.videoFileDB = videoFileDB;
         this.thumbnailDB = thumbnailDB;
         this.thumbnailEvent = thumbnailEvent;
@@ -186,6 +190,19 @@ export default class ThumbnailManageModel implements IThumbnailManageModel {
      * @param videoFileId: apid.VideoFileId
      */
     private async create(videoFileId: apid.VideoFileId): Promise<void> {
+        // BS4K carries data that the legacy thumbnail pipeline cannot decode reliably;
+        // preserve the fork's explicit skip behavior when channel metadata is available.
+        if (this.channelDB !== undefined) {
+            const videoFile = await this.videoFileDB.findId(videoFileId);
+            if (videoFile !== null) {
+                const recorded = await this.recordedDB.findId(videoFile.recordedId);
+                const channel = recorded === null ? null : await this.channelDB.findId(recorded.channelId);
+                if (channel?.channelType === 'BS4K') {
+                    this.log.system.info(`skip BS4K thumbnail: ${videoFileId}, channelId: ${recorded?.channelId}`);
+                    return;
+                }
+            }
+        }
         const prepared = await this.prepareVideoFile(videoFileId);
         if (performance.now() >= prepared.deadline) {
             throw new Error('ThumbnailPreparationTimeout');

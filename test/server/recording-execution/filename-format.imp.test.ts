@@ -1,4 +1,5 @@
 import { mkdtemp, rm } from 'node:fs/promises';
+import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -38,6 +39,43 @@ const foundChannelDB = {
 };
 
 describe('recording file name format tokens (design.md#6.7.1)', () => {
+    it.each([false, true])('uses MMTS extension for BS4K paths (reserve file: %s)', async isReserveFile => {
+        const model = makeModel(foundChannelDB);
+        model.config.recordedBS4KFormat = 'mmts';
+        const access = vi.spyOn(fs.promises, 'access').mockResolvedValue(undefined);
+        const open = vi.spyOn(fs.promises, 'open').mockResolvedValue({ close: vi.fn() } as any);
+        const stat = vi
+            .spyOn(fs.promises, 'stat')
+            .mockRejectedValue(Object.assign(new Error('missing'), { code: 'ENOENT' }));
+        try {
+            const bs4k = await model.getRecPath(
+                makeReserve({ channelType: 'BS4K', ruleId: null }),
+                false,
+                isReserveFile,
+            );
+            expect(bs4k.fileName).toBe('synthetic.mmts');
+            const gr = await model.getRecPath(makeReserve({ channelType: 'GR', ruleId: null }), false, isReserveFile);
+            expect(gr.fileName).toBe('synthetic.ts');
+        } finally {
+            access.mockRestore();
+            open.mockRestore();
+            stat.mockRestore();
+        }
+    });
+
+    it('expands the configured UUID token consistently per filename and uniquely across recordings', async () => {
+        const model = makeModel(foundChannelDB);
+        const reserve = makeReserve({ startAt: SYNTHETIC_START_AT_UTC });
+        const format = '%YEAR%%MONTH%%DAY%-%SID%-%HOUR%%MIN%%SEC%_%UUID%_%UUID%';
+        const first = await model.formatFilePathString(format, reserve);
+        const second = await model.formatFilePathString(format, reserve);
+        expect(first).toMatch(
+            /^20240106-4321-000607_([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})_\1$/,
+        );
+        expect(second).not.toBe(first);
+        expect(second).not.toContain('%UUID%');
+    });
+
     it('[design.md#6.7.1] converts every date/time token to JST with the documented zero-padding', async () => {
         const model = makeModel(notFoundChannelDB);
         const reserve = makeReserve({ startAt: SYNTHETIC_START_AT_UTC });
@@ -124,7 +162,11 @@ describe('recording file name format tokens (design.md#6.7.1)', () => {
         });
         // isTimeSpecified=true が %TITLE% を guide-title へ差し替える一方、
         // %HALF_WIDTH_TITLE% は常に src.halfWidthName のままである (design.md#6.7.1)。
-        const reserve = makeReserve({ isTimeSpecified: true, name: 'reserve-title', halfWidthName: 'half-width-title' });
+        const reserve = makeReserve({
+            isTimeSpecified: true,
+            name: 'reserve-title',
+            halfWidthName: 'half-width-title',
+        });
 
         const result = await model.formatFilePathString('%TITLE%/%HALF_WIDTH_TITLE%', reserve);
 

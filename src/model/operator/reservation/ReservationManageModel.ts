@@ -38,6 +38,19 @@ interface ReserveDiffData {
  * 予約を割り当てる）で行い、既存の予約一覧との差分は`createReservesDiff`で計算して
  * `IReserveDB`へまとめて反映する。
  */
+interface TimeSpecificationRuleCheckTarget {
+    id: apid.RuleId;
+    searchOption: apid.RuleSearchOption;
+}
+
+const normalizeSaveOptionText = (value: string | undefined): string | null => {
+    if (typeof value === 'undefined' || value.trim().length === 0) {
+        return null;
+    }
+
+    return value;
+};
+
 @injectable()
 class ReservationManageModel implements IReservationManageModel {
     private log: ILogger;
@@ -552,12 +565,11 @@ class ReservationManageModel implements IReservationManageModel {
             return;
         }
 
-        reserve.parentDirectoryName =
-            typeof saveOption.parentDirectoryName === 'undefined' ? null : saveOption.parentDirectoryName;
+        reserve.parentDirectoryName = normalizeSaveOptionText(saveOption.parentDirectoryName);
 
-        reserve.directory = typeof saveOption.directory === 'undefined' ? null : saveOption.directory;
+        reserve.directory = normalizeSaveOptionText(saveOption.directory);
 
-        reserve.recordedFormat = typeof saveOption.recordedFormat === 'undefined' ? null : saveOption.recordedFormat;
+        reserve.recordedFormat = normalizeSaveOptionText(saveOption.recordedFormat);
     }
 
     /**
@@ -784,7 +796,9 @@ class ReservationManageModel implements IReservationManageModel {
                     }
 
                     // times 準備
-                    const baseTime = new Date(DateUtil.format(new Date(), 'yyyy/MM/dd 00:00:00 +0900')).getTime();
+                    const baseTime = new Date(
+                        DateUtil.format(DateUtil.getJaDate(new Date()), 'yyyy/MM/dd 00:00:00 +0900'),
+                    ).getTime();
                     for (const time of rule.searchOption.times) {
                         if (typeof time.start === 'undefined' || typeof time.range === 'undefined') {
                             throw new Error('RuleSearchTimesOptionError');
@@ -806,7 +820,7 @@ class ReservationManageModel implements IReservationManageModel {
                             const startAt = baseTime + 1000 * 60 * 60 * 24 * i + time.start * 1000;
                             const endAt = baseTime + 1000 * 60 * 60 * 24 * i + (time.start + time.range) * 1000;
 
-                            if (endAt < updateTime || weeks[new Date(startAt).getDay()] === false) {
+                            if (endAt < updateTime || weeks[DateUtil.getJaDate(new Date(startAt)).getDay()] === false) {
                                 // 終了時刻が現在時刻より古い or 有効な曜日ではない
                                 continue;
                             }
@@ -835,6 +849,9 @@ class ReservationManageModel implements IReservationManageModel {
 
                         // times の分だけ予約情報を生成する
                         for (const time of times) {
+                            if (!(await this.isTimeSpecificationRuleMatched(rule, channelId, time.startAt))) {
+                                continue;
+                            }
                             // 予約情報セット
                             const newReserve = new Reserve();
                             newReserve.isTimeSpecified = true;
@@ -1026,6 +1043,45 @@ class ReservationManageModel implements IReservationManageModel {
         }
 
         return newReserves;
+    }
+
+    private async isTimeSpecificationRuleMatched(
+        rule: TimeSpecificationRuleCheckTarget,
+        channelId: apid.ChannelId,
+        startAt: apid.UnixtimeMS,
+    ): Promise<boolean> {
+        const keyword = rule.searchOption.keyword;
+        if (typeof keyword !== 'string' || keyword.length === 0) {
+            return true;
+        }
+
+        const program = await this.programDB.findChannelIdAndTime(channelId, startAt).catch(err => {
+            this.log.system.warn(
+                `time specification rule program check failed ruleId: ${rule.id}, channelId: ${channelId}, startAt: ${startAt}`,
+            );
+            this.log.system.warn(err);
+            return null;
+        });
+        if (program === null) {
+            return true;
+        }
+
+        const normalize = (value: string): string => {
+            return StrUtil.deleteBrackets(StrUtil.toHalf(value)).toLowerCase();
+        };
+        const name = normalize(program.name);
+        const keywords = normalize(keyword)
+            .split(/\s+/)
+            .filter(str => str.length > 0);
+        const isMatched = keywords.every(str => name.includes(str));
+        if (isMatched === false) {
+            this.log.system.warn(
+                `skip time specification reserve because program name is not matched ruleId: ${rule.id}, ` +
+                    `channelId: ${channelId}, startAt: ${startAt}, keyword: ${keyword}, program: ${program.name}`,
+            );
+        }
+
+        return isMatched;
     }
 
     /**
