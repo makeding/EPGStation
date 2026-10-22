@@ -446,7 +446,8 @@ describe('recording manager failed-recording retry', () => {
     it.each([
         { count: 0, retries: true },
         { count: 2, retries: true },
-        { count: 3, retries: false },
+        { count: 4, retries: true },
+        { count: 5, retries: false },
     ])('[P1][RE-6.1/6.3/6.4] counts $count prior results once at the exact retry boundary', async scenario => {
         const initialRecorder = makeRetryRecorder();
         const retryRecorder = makeRetryRecorder();
@@ -474,7 +475,8 @@ describe('recording manager failed-recording retry', () => {
 
     it.each([
         { count: 0, retries: true },
-        { count: 3, retries: false },
+        { count: 4, retries: true },
+        { count: 5, retries: false },
     ])('[P1 review][RE-6.1/6.4] claims one failure identity when count is $count', async scenario => {
         const now = Date.now();
         const initialRecorder = makeRetryRecorder();

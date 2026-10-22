@@ -138,6 +138,8 @@ export default class StorageManageModel implements IStorageManageModel {
         for (const l of list) {
             const occurrenceIndex = occurrenceIndexes.get(l) ?? 0;
             occurrenceIndexes.set(l, occurrenceIndex + 1);
+            if (l.limitThreshold === undefined && l.warningThreshold === undefined && l.criticalThreshold === undefined)
+                continue;
             const entryId = this.getEntryId(l, occurrenceIndex);
             if (this.activeOperations.has(entryId)) {
                 continue;

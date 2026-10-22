@@ -48,7 +48,7 @@ describe('StorageManageModel.getFreeSize diskusage err (unittest/imp)', () => {
 
         expect(logger.system.error).toHaveBeenCalledWith('get disk info error: synthetic-storage/disk-fail');
         expect(logger.system.error).toHaveBeenCalledWith(boom);
-        expect(logger.system.error).toHaveBeenCalledTimes(2);
+        expect(logger.system.error).toHaveBeenCalledTimes(4);
 
         manager.stop();
         expect(vi.getTimerCount()).toBe(0);

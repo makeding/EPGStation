@@ -1,5 +1,8 @@
 import type * as apid from '../../../../../api.js';
-import { RecordedPlaybackSource } from '../../../operator/recorded/IRecordedPlaybackSourceProvider.js';
+import {
+    RecordedPlaybackOpenOption,
+    RecordedPlaybackSource,
+} from '../../../operator/recorded/IRecordedPlaybackSourceProvider.js';
 import IRecordedStreamBaseModel from '../base/IRecordedStreamBaseModel.js';
 import IStreamBaseModel, { LiveStreamInfo, RecordedStreamInfo } from '../base/IStreamBaseModel.js';
 import RecordedDeliveryLeaseConsumer, {
@@ -75,12 +78,14 @@ export default interface IStreamManageModel {
      * @param isActive リース取得の途中で呼び出し元がまだ有効かを確認するための callback。
      *                 省略時は常に有効として扱う。
      * @param consumer 省略時は DI で注入された既定の consumer を使う。
+     * @param openOption 再生元を開く際の直接配信用 option。
      */
     acquireRecordedDelivery(
         videoFileId: number,
         playPosition: number,
         isActive?: () => boolean,
         consumer?: Pick<RecordedDeliveryLeaseConsumer, 'acquireAndOpen'>,
+        openOption?: RecordedPlaybackOpenOption,
     ): Promise<AcquiredRecordedDeliverySource>;
     /**
      * 指定した stream を停止する。存在しない streamId は無視する。

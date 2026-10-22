@@ -99,6 +99,22 @@ describe('動画情報を取得できない録画ファイルの直接配信 (un
         },
     );
 
+    it('[MD-2.2] 録画中でも追いかけ指定がfalseなら通常の読み切りreaderを返す', async () => {
+        const fixture = makeProvider('ts', true);
+
+        const opened = await fixture.provider.open(31, 41, 0, {
+            allowMissingVideoInfo: true,
+            useRecordingTail: false,
+        });
+
+        expect(fixture.readerFactory.openCompletedFile).toHaveBeenCalledExactlyOnceWith(
+            '/synthetic/secret/recording.ts',
+            0,
+        );
+        expect(fixture.readerFactory.openRecordingTail).not.toHaveBeenCalled();
+        expect(opened.adopt()).toMatchObject({ source: { kind: 'completed-file-reader' }, status: 'adopted' });
+    });
+
     it('[MD-2.2] encode 済みは ffprobe が失敗しても直接配信の source を返す', async () => {
         const fixture = makeProvider('encoded', false);
 

@@ -59,13 +59,7 @@ const setup = (
     const log = logger();
     const socket = { notifyClient: vi.fn() };
     const execution = options.execution ?? executionManager();
-    const manager = new StreamManageModel(
-        { getLogger: () => log },
-        execution,
-        socket,
-        options.allocator,
-        consumer,
-    );
+    const manager = new StreamManageModel({ getLogger: () => log }, execution, socket, options.allocator, consumer);
     return { execution, log, manager, socket };
 };
 
@@ -132,7 +126,12 @@ describe('StreamManageModel recorded start and release states (unittest/imp)', (
         });
         const { manager } = setup(consumer);
 
-        await expect(manager.startRecorded(vi.fn(async () => stream), recordedStartOption())).rejects.toBe(failure);
+        await expect(
+            manager.startRecorded(
+                vi.fn(async () => stream),
+                recordedStartOption(),
+            ),
+        ).rejects.toBe(failure);
 
         expect(delivery.release).toHaveBeenCalledOnce();
         expect(stream.stop).not.toHaveBeenCalled();
@@ -150,7 +149,12 @@ describe('StreamManageModel recorded start and release states (unittest/imp)', (
         });
         const { manager } = setup(consumer);
 
-        await expect(manager.startRecorded(vi.fn(async () => stream), option)).rejects.toBe(failure);
+        await expect(
+            manager.startRecorded(
+                vi.fn(async () => stream),
+                option,
+            ),
+        ).rejects.toBe(failure);
 
         expect(stream.stop).toHaveBeenCalledOnce();
         expect(delivery.release).not.toHaveBeenCalled();
@@ -208,11 +212,14 @@ describe('StreamManageModel acquireRecordedDelivery states (unittest/imp)', () =
         const { manager } = setup(consumer);
         let callerActive = true;
 
-        const acquiring = manager.acquireRecordedDelivery(31, 0, () => callerActive);
+        const acquiring = manager.acquireRecordedDelivery(31, 0, () => callerActive, undefined, {
+            useRecordingTail: false,
+        });
         const timeout = expect(acquiring).rejects.toThrow('StreamStartTimeout');
 
         expect(consumer.acquireAndOpen).toHaveBeenCalledExactlyOnceWith(31, 0, expect.any(Function), {
             allowMissingVideoInfo: true,
+            useRecordingTail: false,
         });
         expect(probe!()).toBe(true);
         callerActive = false;

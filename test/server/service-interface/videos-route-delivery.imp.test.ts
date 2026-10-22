@@ -60,11 +60,11 @@ describe('GET /videos/{videoFileId} delivery lease (unittest/imp)', () => {
 
         expect(response.status).toBe(404);
         expect(await response.json()).toEqual({ code: 404, message: 'video file is not found' });
-        expect(openDelivery).toHaveBeenCalledExactlyOnceWith(31, expect.any(Function));
+        expect(openDelivery).toHaveBeenCalledExactlyOnceWith(31, expect.any(Function), false);
     });
 
-    it('[SI-4.3] streams the provider reader without Content-Length for a tail delivery and releases once', async () => {
-        activeRequest = { query: {} };
+    it.each(['true', true])('[SI-4.3] streams the tail delivery for isChase=%s and releases once', async isChase => {
+        activeRequest = { query: { isChase } };
         const readable = new PassThrough();
         readable.end('synthetic-tail-bytes');
         const release = vi.fn().mockResolvedValue(undefined);
@@ -83,6 +83,7 @@ describe('GET /videos/{videoFileId} delivery lease (unittest/imp)', () => {
         expect(response.headers.get('content-type')).toBe('video/mp2t');
         expect(response.headers.get('content-length')).toBeNull();
         expect(await response.text()).toBe('synthetic-tail-bytes');
+        expect(openDelivery).toHaveBeenCalledExactlyOnceWith(31, expect.any(Function), true);
         await waitFor(() => release.mock.calls.length > 0);
         expect(release).toHaveBeenCalledOnce();
     });

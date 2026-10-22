@@ -117,7 +117,11 @@ export const makeModel = (overrides: Record<string, any> = {}) => {
         reserveDB,
         reserveEvent,
         channelDB: { findId: vi.fn(async () => null) },
-        programDB: { findId: vi.fn(async () => null), findRule: vi.fn(async () => []) },
+        programDB: {
+            findId: vi.fn(async () => null),
+            findRule: vi.fn(async () => []),
+            findChannelIdAndTime: vi.fn(async () => null),
+        },
         ruleDB: { findId: vi.fn(async () => null), getIds: vi.fn(async () => []) },
         ...overrides,
     };

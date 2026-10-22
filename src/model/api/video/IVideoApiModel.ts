@@ -23,7 +23,11 @@ export interface VideoDelivery extends VideoFilePathInfo {
  */
 export default interface IVideoApiModel {
     getFullFilePath(videoFileId: apid.VideoFileId): Promise<VideoFilePathInfo | null>;
-    openDelivery(videoFileId: apid.VideoFileId, isActive?: () => boolean): Promise<VideoDelivery | null>;
+    openDelivery(
+        videoFileId: apid.VideoFileId,
+        isActive?: () => boolean,
+        isChase?: boolean,
+    ): Promise<VideoDelivery | null>;
     getM3u8(host: string, isSecure: boolean, videoFileId: apid.VideoFileId): Promise<IPlayList | null>;
     deleteVideoFile(videoFileId: apid.VideoFileId): Promise<void>;
     getDuration(videoFileId: apid.VideoFileId): Promise<number>;

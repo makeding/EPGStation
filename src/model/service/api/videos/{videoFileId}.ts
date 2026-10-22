@@ -37,6 +37,7 @@ export const get: Operation = async (req, res) => {
         const delivery = await videoFileApiModel.openDelivery(
             parseInt(api.pathParam(req, 'videoFileId'), 10),
             () => !closed,
+            String(req.query.isChase) === 'true',
         );
 
         if (delivery === null) {

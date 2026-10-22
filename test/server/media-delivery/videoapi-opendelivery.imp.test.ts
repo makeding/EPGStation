@@ -16,6 +16,7 @@ let VideoApiModel: new (...args: unknown[]) => {
     openDelivery(
         videoFileId: number,
         isActive?: () => boolean,
+        isChase?: boolean,
     ): Promise<{
         isTail: boolean;
         mime: string;
@@ -44,7 +45,15 @@ const reader = { readable: { synthetic: 'readable' } };
 const makeSubject = (source: Record<string, unknown>) => {
     const deliveryRelease = vi.fn().mockResolvedValue(undefined);
     const acquireRecordedDelivery = vi.fn().mockResolvedValue({ release: deliveryRelease, source });
-    const model = new VideoApiModel({}, {}, {}, {}, {}, {}, { acquireRecordedDelivery });
+    const model = new VideoApiModel(
+        {},
+        { findId: vi.fn(async () => ({ recordedId: 101 })) },
+        { findId: vi.fn(async () => ({ isRecording: source.kind === 'recording-tail-reader' })) },
+        {},
+        {},
+        {},
+        { acquireRecordedDelivery },
+    );
     return { acquireRecordedDelivery, deliveryRelease, model };
 };
 
@@ -62,9 +71,11 @@ describe('VideoApiModel.openDelivery delivery assembly (unittest/imp)', () => {
             reader,
         });
 
-        const delivery = await model.openDelivery(51);
+        const delivery = await model.openDelivery(51, undefined, true);
 
-        expect(acquireRecordedDelivery).toHaveBeenCalledExactlyOnceWith(51, 0, expect.any(Function));
+        expect(acquireRecordedDelivery).toHaveBeenCalledExactlyOnceWith(51, 0, expect.any(Function), undefined, {
+            useRecordingTail: true,
+        });
         expect(delivery).toMatchObject({
             isTail: true,
             mime: 'video/mp4',
@@ -78,10 +89,16 @@ describe('VideoApiModel.openDelivery delivery assembly (unittest/imp)', () => {
 
     it('[MD-10.2] gives an encoded-direct source no reader and no tail flag', async () => {
         fileTypeFromFileDispatch.mockResolvedValue({ mime: 'video/webm' });
-        const { model } = makeSubject({ inputPath: '/synthetic/encoded.webm', kind: 'encoded-direct' });
+        const { acquireRecordedDelivery, model } = makeSubject({
+            inputPath: '/synthetic/encoded.webm',
+            kind: 'encoded-direct',
+        });
 
         const delivery = await model.openDelivery(52);
 
+        expect(acquireRecordedDelivery).toHaveBeenCalledExactlyOnceWith(52, 0, expect.any(Function), undefined, {
+            useRecordingTail: false,
+        });
         expect(delivery).toMatchObject({ isTail: false, mime: 'video/webm', path: '/synthetic/encoded.webm' });
         expect(delivery!.reader).toBeUndefined();
     });

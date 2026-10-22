@@ -67,6 +67,7 @@ export default class VideoApiModel implements IVideoApiModel {
     public async openDelivery(
         videoFileId: apid.VideoFileId,
         isActive: () => boolean = () => true,
+        isChase = false,
     ): Promise<VideoDelivery | null> {
         if (this.streamManageModel === undefined) {
             throw new Error('StreamManageModelIsUndefined');
@@ -79,7 +80,9 @@ export default class VideoApiModel implements IVideoApiModel {
 
         let delivery;
         try {
-            delivery = await this.streamManageModel.acquireRecordedDelivery(videoFileId, 0, isActive);
+            delivery = await this.streamManageModel.acquireRecordedDelivery(videoFileId, 0, isActive, undefined, {
+                useRecordingTail: isChase,
+            });
         } catch (error: unknown) {
             const legacy = toLegacyRecordedDeliveryError(error);
             if (

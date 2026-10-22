@@ -3,6 +3,7 @@ import type * as apid from '../../../../../api.js';
 import IExecutionManagementModel from '../../../IExecutionManagementModel.js';
 import ILogger from '../../../ILogger.js';
 import ILoggerModel from '../../../ILoggerModel.js';
+import { RecordedPlaybackOpenOption } from '../../../operator/recorded/IRecordedPlaybackSourceProvider.js';
 import ISocketIOManageModel from '../../socketio/ISocketIOManageModel.js';
 import IRecordedStreamBaseModel from '../base/IRecordedStreamBaseModel.js';
 import IStreamBaseModel, { LiveStreamInfo, RecordedStreamInfo } from '../base/IStreamBaseModel.js';
@@ -261,12 +262,14 @@ class StreamManageModel implements IStreamManageModel {
      * タイムアウト・多重解放を管理しながらリースを取得する。
      * @param isActive 取得の途中で呼び出し元がまだ有効かを確認する callback。
      * @param consumer 省略時は DI で注入された既定の consumer を使う。
+     * @param openOption 再生元を開く際の直接配信用 option。
      */
     public async acquireRecordedDelivery(
         videoFileId: number,
         playPosition: number,
         isActive: () => boolean = () => true,
         suppliedConsumer?: Pick<RecordedDeliveryLeaseConsumer, 'acquireAndOpen'>,
+        openOption?: RecordedPlaybackOpenOption,
     ): Promise<AcquiredRecordedDeliverySource> {
         const consumer = suppliedConsumer ?? this.recordedDeliveryLeaseConsumer;
         if (consumer === undefined) {
@@ -293,6 +296,7 @@ class StreamManageModel implements IStreamManageModel {
                 .acquireAndOpen(videoFileId, playPosition, () => active.state === 'starting' && isActive(), {
                     // 直接配信は動画情報を使わないため、ffprobe の失敗で配信を止めない。
                     allowMissingVideoInfo: true,
+                    ...openOption,
                 })
                 .then(
                     delivery => {

@@ -116,4 +116,6 @@ export default interface IRecordedPlaybackSourceProvider {
 export interface RecordedPlaybackOpenOption {
     /** 動画情報（ffprobe）の取得失敗を許し、`NaN`の動画情報で続けるか。 */
     readonly allowMissingVideoInfo?: boolean;
+    /** 録画中のraw fileを末尾待ちreaderで読むか。省略時は既存の視聴用streamと同じく有効。 */
+    readonly useRecordingTail?: boolean;
 }

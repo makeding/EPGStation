@@ -293,12 +293,13 @@ export default class RecordedPlaybackSourceProvider implements IRecordedPlayback
         if (Number.isFinite(start) === false) {
             throw new Error('RecordedPlaybackStartPositionUnavailable');
         }
-        const reader = recorded.isRecording
+        const useRecordingTail = recorded.isRecording && option?.useRecordingTail !== false;
+        const reader = useRecordingTail
             ? await this.readerFactory.openRecordingTail(inputPath, start)
             : await this.readerFactory.openCompletedFile(inputPath, start);
         return new OpenedPlaybackSource({
             inputPath,
-            kind: recorded.isRecording ? 'recording-tail-reader' : 'completed-file-reader',
+            kind: useRecordingTail ? 'recording-tail-reader' : 'completed-file-reader',
             playPosition,
             reader,
             recordedId: videoFile.recordedId,
