@@ -8,18 +8,14 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const axios_1 = __importDefault(require("axios"));
-const log4js_1 = require("log4js");
+import axios from 'axios';
+import log4js from 'log4js';
 const RECORDEDID = Number(process.env.RECORDEDID);
 const VIDEOFILEID = Number(process.env.VIDEOFILEID);
 // const RECORDEDID: number = 4556;
 // const VIDEOFILEID: number = 8816;
 const HOST = 'http://[::1]:8888';
-(0, log4js_1.configure)({
+log4js.configure({
     appenders: {
         console: {
             type: 'console',
@@ -36,7 +32,7 @@ const HOST = 'http://[::1]:8888';
         default: { appenders: ['console', 'logfile'], level: 'info' },
     },
 });
-const logger = (0, log4js_1.getLogger)();
+const logger = log4js.getLogger();
 logger.level = 'info';
 function main() {
     return __awaiter(this, void 0, void 0, function* () {
@@ -51,7 +47,7 @@ function main() {
 function get_thumbnail_number() {
     return __awaiter(this, void 0, void 0, function* () {
         logger.info(`${HOST}/api/recorded/${RECORDEDID.toString()}?isHalfWidth=true`);
-        return yield axios_1.default.get(`${HOST}/api/recorded/${RECORDEDID.toString()}?isHalfWidth=true`).then(function (response) {
+        return yield axios.get(`${HOST}/api/recorded/${RECORDEDID.toString()}?isHalfWidth=true`).then(function (response) {
             logger.debug(response);
             logger.debug(response.data.thumbnails[0]);
             return response.data.thumbnails[0];
@@ -60,14 +56,14 @@ function get_thumbnail_number() {
 }
 function del_thumbnail(thumbnails_number) {
     return __awaiter(this, void 0, void 0, function* () {
-        return yield axios_1.default.delete(`${HOST}/api/thumbnails/${thumbnails_number.toString()}`).then(function (response) {
+        return yield axios.delete(`${HOST}/api/thumbnails/${thumbnails_number.toString()}`).then(function (response) {
             logger.info(`delete:${response.data}`);
         });
     });
 }
 function create_thumbnail() {
     return __awaiter(this, void 0, void 0, function* () {
-        return yield axios_1.default.post(`${HOST}/api/thumbnails/videos/${VIDEOFILEID.toString()}`).then(function (response) {
+        return yield axios.post(`${HOST}/api/thumbnails/videos/${VIDEOFILEID.toString()}`).then(function (response) {
             logger.info(`create:${response.data}`);
         });
     });

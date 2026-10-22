@@ -43,8 +43,8 @@ categories:
       - access
       - stdout
     level: info
-  stream: 
-    appenders: 
+  stream:
+    appenders:
       - stream
       - stdout
     level: info
@@ -53,4 +53,3 @@ categories:
       - encode
       - stdout
     level: info
-

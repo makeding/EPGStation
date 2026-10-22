@@ -1,12 +1,12 @@
 import { inject, injectable } from 'inversify';
-import * as apid from '../../../../api';
-import Channel from '../../../db/entities/Channel';
-import Program from '../../../db/entities/Program';
-import IChannelDB from '../../db/IChannelDB';
-import IProgramDB, { ProgramWithOverlap } from '../../db/IProgramDB';
-import ChannelTypeUtil from '../../../util/ChannelTypeUtil';
-import IScheduleApiModel from './IScheduleApiModel';
+import type * as apid from '../../../../api.js';
+import Channel from '../../../db/entities/Channel.js';
+import Program from '../../../db/entities/Program.js';
+import IChannelDB from '../../db/IChannelDB.js';
+import IProgramDB, { ProgramWithOverlap } from '../../db/IProgramDB.js';
+import IScheduleApiModel from './IScheduleApiModel.js';
 
+/** `IScheduleApiModel` の実装。詳細は `IScheduleApiModel` を参照。 */
 @injectable()
 export default class ScheduleApiModel implements IScheduleApiModel {
     private channelDB: IChannelDB;
@@ -38,7 +38,31 @@ export default class ScheduleApiModel implements IScheduleApiModel {
      * @return Promise<apid.Schedule[]>
      */
     public async getSchedules(option: apid.ScheduleOption): Promise<apid.Schedule[]> {
-        const types = ChannelTypeUtil.getSelectedChannelTypes(option);
+        const types: apid.ChannelType[] = [];
+        if (option.GR === true) {
+            types.push('GR');
+        }
+        if (option.BS === true) {
+            types.push('BS');
+        }
+        if (option.CS === true) {
+            types.push('CS');
+        }
+        if (option.SKY === true) {
+            types.push('SKY');
+        }
+        if (option.BS4K === true) {
+            types.push('BS4K');
+        }
+        for (let index = 1; index <= 40; index += 1) {
+            const type = `NW${index}` as apid.ChannelType;
+            if (option[type] === true) {
+                types.push(type);
+            }
+        }
+        if (option['GR-ALT'] === true) {
+            types.push('GR-ALT');
+        }
 
         if (types.length === 0) {
             throw new Error('GetScheduleTypesError');

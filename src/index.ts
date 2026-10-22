@@ -2,18 +2,22 @@ import * as child_process from 'child_process';
 import * as path from 'path';
 import 'reflect-metadata';
 import { install } from 'source-map-support';
-import IEPGUpdateExecutorManageModel from './model/epgUpdater/IEPGUpdateExecutorManageModel';
-import IEventSetter from './model/event/IEventSetter';
-import IConfiguration from './model/IConfiguration';
-import IConnectionCheckModel from './model/IConnectionCheckModel';
-import ILoggerModel from './model/ILoggerModel';
-import IMirakurunClientModel from './model/IMirakurunClientModel';
-import IIPCServer from './model/ipc/IIPCServer';
-import container from './model/ModelContainer';
-import * as containerSetter from './model/ModelContainerSetter';
-import IRecordingManageModel from './model/operator/recording/IRecordingManageModel';
-import IReservationManageModel from './model/operator/reservation/IReservationManageModel';
-import IStorageManageModel from './model/operator/storage/IStorageManageModel';
+import IEPGUpdateExecutorManageModel from './model/epgUpdater/IEPGUpdateExecutorManageModel.js';
+import IEventSetter from './model/event/IEventSetter.js';
+import IConfiguration from './model/IConfiguration.js';
+import IConnectionCheckModel from './model/IConnectionCheckModel.js';
+import ILoggerModel from './model/ILoggerModel.js';
+import IIPCServer from './model/ipc/IIPCServer.js';
+import container from './model/ModelContainer.js';
+import * as containerSetter from './model/ModelContainerSetter.js';
+import IRecordingManageModel from './model/operator/recording/IRecordingManageModel.js';
+import IReservationManageModel from './model/operator/reservation/IReservationManageModel.js';
+import IStorageManageModel from './model/operator/storage/IStorageManageModel.js';
+import { TunerServerAccess } from './model/tuner/types.js';
+import RuntimeStartupWorkflowPort, {
+    RuntimeStartupWorkflowInput,
+} from './model/workflow/RuntimeStartupWorkflowPort.js';
+import observeStartupStage from './StartupStageObserver.js';
 install();
 
 containerSetter.set(container);
@@ -57,6 +61,9 @@ const init = async () => {
         }
     }
 
+    // uid, gid が設定されてから再度 log 再設定
+    logger.initialize();
+
     // 接続確認
     const connectionChecker = container.get<IConnectionCheckModel>('IConnectionCheckModel');
     // wait mirakurun
@@ -70,7 +77,7 @@ const init = async () => {
  * Operator 機能起動処理
  */
 const runOperator = async () => {
-    const client = container.get<IMirakurunClientModel>('IMirakurunClientModel').getClient();
+    const tunerServerAccess = container.get<TunerServerAccess>('TunerServerAccess');
 
     const eventSetter = container.get<IEventSetter>('IEventSetter');
     eventSetter.set();
@@ -78,7 +85,7 @@ const runOperator = async () => {
     const reservationManageModel = container.get<IReservationManageModel>('IReservationManageModel');
     const recordingManager = container.get<IRecordingManageModel>('IRecordingManageModel');
 
-    const tuners = await client.getTuners();
+    const tuners = await tunerServerAccess.getTuners();
     reservationManageModel.setTuners(tuners);
     recordingManager.setTuner(tuners);
 
@@ -87,60 +94,174 @@ const runOperator = async () => {
 };
 
 /**
+ * 終了した Web・API 側処理の後始末（外部プロセスの停止、途中のファイルの削除、録画の使用権の解放）。
+ * 上限の時間で打ち切り、終えてから再起動へ進む。
+ */
+interface ServiceChildTerminationCleanupPort {
+    run(child: object): Promise<void>;
+}
+
+/**
  * Service 起動処理
  */
+let activeServiceChild: child_process.ChildProcess | null = null;
+let activeServiceGeneration: object | null = null;
+
 const runService = async () => {
     const child = child_process.spawn(
         process.argv[0],
-        [path.join(__dirname, 'model', 'service', 'ServiceExecutor.js')],
+        [path.join(import.meta.dirname, 'model', 'service', 'ServiceExecutor.js')],
         {
             stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
         },
     );
 
-    // 終了したら再起動
     const log = container.get<ILoggerModel>('ILoggerModel').getLogger();
-    child.once('exit', () => {
+    const generation = {};
+    let terminalSettled = false;
+    const onStdout = () => {};
+    const onStderr = () => {};
+    const onTerminal = (code: number | null = null, signal: NodeJS.Signals | null = null) => {
+        if (terminalSettled || activeServiceChild !== child || activeServiceGeneration !== generation) {
+            return;
+        }
+        terminalSettled = true;
+        const onLateError = () => {};
+        const onLateClose = () => {
+            child.removeListener('error', onLateError);
+        };
+        child.on('error', onLateError);
+        child.once('close', onLateClose);
+        detachListeners();
+        activeServiceChild = null;
+        activeServiceGeneration = null;
         log.system.fatal('service process is down');
-        log.system.fatal('restart service');
-        runService();
-    });
-    child.once('error', () => {
-        runService();
-    });
+        log.system.fatal(`service process exit code: ${code}, signal: ${signal}`);
+        // 後始末の部品の取り出しも chain の中で行い、取り出しや後始末が失敗しても記録して必ず再起動する
+        void Promise.resolve()
+            .then(() => container.get<ServiceChildTerminationCleanupPort>('IServiceChildTerminationCleanup').run(child))
+            .catch((err: unknown) => {
+                log.system.fatal(`service child cleanup failed: ${String(err)}`);
+            })
+            .then(() => {
+                log.system.fatal('restart service');
+                void runService();
+            });
+    };
+    const onError = () => {
+        onTerminal();
+    };
+    const detachListeners = () => {
+        child.removeListener('exit', onTerminal);
+        child.removeListener('error', onError);
+        child.removeListener('close', onClose);
+        if (child.stdout !== null) {
+            child.stdout.removeListener('data', onStdout);
+        }
+        if (child.stderr !== null) {
+            child.stderr.removeListener('data', onStderr);
+        }
+    };
+    const onClose = () => {
+        detachListeners();
+    };
+    child.once('exit', onTerminal);
+    child.on('error', onError);
+    child.once('close', onClose);
+
+    // buffer が埋まらないようにする
+    if (child.stdout !== null) {
+        child.stdout.on('data', onStdout);
+    }
+    if (child.stderr !== null) {
+        child.stderr.on('data', onStderr);
+    }
 
     // IPC 通信設定
     const ipcServer = container.get<IIPCServer>('IIPCServer');
-    ipcServer.register(child);
+    activeServiceChild = child;
+    activeServiceGeneration = generation;
+    registerServiceAndStartWorkflow(ipcServer, child);
 
     log.system.info(`start service pid: ${child.pid}`);
 
     // TODO ping pong
 };
 
-/**
- * クリーンアップ処理
- */
-const cleanup = async () => {
+const initializeIPC = async () => {
+    const ipcServer = container.get<IIPCServer>('IIPCServer');
+    await ipcServer.initialize();
+};
+
+type StartupStageName = 'recording-reconciliation' | 'recording-candidates-and-start' | 'expired-reservation-cleanup';
+
+const recordStartupStageOverdue = (stage: StartupStageName): void => {
+    const log = container.get<ILoggerModel>('ILoggerModel').getLogger();
+    log.system.error(`startup stage overdue: ${stage}`);
+};
+
+let epgSupervisorStarted = false;
+
+const runEPGUpdater = async () => {
+    if (container.get<IConfiguration>('IConfiguration').getConfig().epgUpdaterMode === 'external') {
+        return;
+    }
+    const epgUpdateExecutorManageModel = container.get<IEPGUpdateExecutorManageModel>('IEPGUpdateExecutorManageModel');
+    epgUpdateExecutorManageModel.execute();
+};
+
+const createObservedStartupWorkflowInput = (): RuntimeStartupWorkflowInput => {
     const reservationManageModel = container.get<IReservationManageModel>('IReservationManageModel');
     const recordingManager = container.get<IRecordingManageModel>('IRecordingManageModel');
 
-    await recordingManager.cleanup();
-    await reservationManageModel.cleanup();
+    return {
+        runRecordingReconciliation: () =>
+            observeStartupStage(
+                () => recordingManager.cleanup(),
+                () => recordStartupStageOverdue('recording-reconciliation'),
+            ),
+        runRecordingCandidatesAndStart: () =>
+            observeStartupStage(
+                () => recordingManager.rebuildCandidatesAndStart(),
+                () => recordStartupStageOverdue('recording-candidates-and-start'),
+            ),
+        runExpiredReservationCleanup: () =>
+            observeStartupStage(
+                () => reservationManageModel.cleanup(),
+                () => recordStartupStageOverdue('expired-reservation-cleanup'),
+            ),
+        startEpgSupervisor: async () => {
+            if (epgSupervisorStarted) return;
+            epgSupervisorStarted = true;
+            await runEPGUpdater();
+        },
+    };
 };
 
-/**
- * EPGUpdater 起動処理
- */
-const runEPGUpdater = async () => {
-    const config = container.get<IConfiguration>('IConfiguration').getConfig();
-    if (config.epgUpdaterMode === 'external') {
-        container.get<ILoggerModel>('ILoggerModel').getLogger().system.info('EPG updater is managed externally');
-        return;
-    }
+let startupWorkflowStarted = false;
 
-    const epgUpdateExecutorManageModel = container.get<IEPGUpdateExecutorManageModel>('IEPGUpdateExecutorManageModel');
-    epgUpdateExecutorManageModel.execute();
+const runStartupWorkflow = (): void => {
+    if (startupWorkflowStarted) return;
+    startupWorkflowStarted = true;
+
+    const startupWorkflow = container.get<RuntimeStartupWorkflowPort>('IRuntimeStartupWorkflowPort');
+    void startupWorkflow
+        .runAfterServiceSupervisionAccepted(createObservedStartupWorkflowInput())
+        .then(outcome => {
+            // The typed `Failed` outcome fulfils (it never rejects), so it must be recorded here
+            // through the existing fatal path instead of relying on process-level unhandledRejection.
+            if (outcome.kind === 'Failed') {
+                const log = container.get<ILoggerModel>('ILoggerModel').getLogger();
+                const reason = outcome.cause instanceof Error ? outcome.cause.message : String(outcome.cause);
+                log.system.fatal(`startup workflow failed at stage "${outcome.stage}": ${reason}`);
+            }
+        })
+        .catch(() => undefined);
+};
+
+const registerServiceAndStartWorkflow = (ipcServer: IIPCServer, child: child_process.ChildProcess): void => {
+    ipcServer.register(child);
+    runStartupWorkflow();
 };
 
 (async () => {
@@ -152,11 +273,9 @@ const runEPGUpdater = async () => {
         process.exit(1);
     }
 
+    await initializeIPC();
+
     await runOperator();
 
     await runService();
-
-    await cleanup();
-
-    await runEPGUpdater();
 })();

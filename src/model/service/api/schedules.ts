@@ -1,25 +1,40 @@
 import { Operation } from 'express-openapi';
-import * as apid from '../../../../api';
-import IScheduleApiModel from '../../api/schedule/IScheduleApiModel';
-import container from '../../ModelContainer';
-import ChannelTypeUtil from '../../../util/ChannelTypeUtil';
-import * as api from '../api';
+import type * as apid from '../../../../api.js';
+import IScheduleApiModel from '../../api/schedule/IScheduleApiModel.js';
+import container from '../../ModelContainer.js';
+import ChannelTypeUtil from '../../../util/ChannelTypeUtil.js';
+import * as api from '../api.js';
 
+/**
+ * `GET /schedules` ハンドラ。期間（startAt/endAt）と種別フィルタ（GR/BS/CS/SKY/isFree等、
+ * すべてquery）から検索条件を組み立て、`IScheduleApiModel#getSchedules` で番組表情報を返す。
+ * GR/BS/CS/SKYはrequiredなquery（省略不可）だが、BS4Kは任意（`req.query.BS4K`が`boolean`の
+ * ときだけoptionへ渡す）。既存clientがBS4Kを付けずに呼んだ場合はoption.BS4Kが`undefined`のまま
+ * になり、従来どおりGR/BS/CS/SKYの4種別だけで絞り込まれる。
+ */
 export const get: Operation = async (req, res) => {
     const scheduleApiModel = container.get<IScheduleApiModel>('IScheduleApiModel');
 
     try {
-        const option = {
+        const option: apid.ScheduleOption = {
             startAt: parseInt(req.query.startAt as any, 10),
             endAt: parseInt(req.query.endAt as any, 10),
             isHalfWidth: req.query.isHalfWidth as any,
             needsRawExtended: req.query.needsRawExtended as any,
-        } as apid.ScheduleOption;
-        for (const type of ChannelTypeUtil.CHANNEL_TYPES) {
-            option[type] = req.query[type] as any;
+            GR: req.query.GR as any,
+            'GR-ALT': req.query['GR-ALT'] as any,
+            BS: req.query.BS as any,
+            CS: req.query.CS as any,
+            SKY: req.query.SKY as any,
+        };
+        for (const type of ChannelTypeUtil.CHANNEL_TYPES.filter(type => !['GR', 'BS', 'CS', 'SKY'].includes(type))) {
+            (option as any)[type] = req.query[type] as any;
         }
         if (typeof req.query.isFree === 'boolean') {
             option.isFree = req.query.isFree;
+        }
+        if (typeof req.query.BS4K === 'boolean') {
+            option.BS4K = req.query.BS4K;
         }
         api.responseJSON(res, 200, await scheduleApiModel.getSchedules(option));
     } catch (err: any) {
@@ -51,13 +66,7 @@ get.apiDoc = {
             $ref: '#/components/parameters/requiredGR',
         },
         {
-            $ref: '#/components/parameters/requiredGRALT',
-        },
-        {
             $ref: '#/components/parameters/requiredBS',
-        },
-        {
-            $ref: '#/components/parameters/requiredBS4K',
         },
         {
             $ref: '#/components/parameters/requiredCS',
@@ -66,125 +75,16 @@ get.apiDoc = {
             $ref: '#/components/parameters/requiredSKY',
         },
         {
-            $ref: '#/components/parameters/requiredNW1',
+            $ref: '#/components/parameters/optionalBS4K',
         },
-        {
-            $ref: '#/components/parameters/requiredNW2',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW3',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW4',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW5',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW6',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW7',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW8',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW9',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW10',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW11',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW12',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW13',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW14',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW15',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW16',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW17',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW18',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW19',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW20',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW21',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW22',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW23',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW24',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW25',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW26',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW27',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW28',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW29',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW30',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW31',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW32',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW33',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW34',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW35',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW36',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW37',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW38',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW39',
-        },
-        {
-            $ref: '#/components/parameters/requiredNW40',
-        },
+        ...ChannelTypeUtil.CHANNEL_TYPES.filter(type => !['GR', 'BS', 'CS', 'SKY', 'BS4K'].includes(type)).map(
+            type => ({
+                name: type,
+                in: 'query',
+                required: false,
+                schema: { type: 'boolean' },
+            }),
+        ),
     ],
     responses: {
         200: {

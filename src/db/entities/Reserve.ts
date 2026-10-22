@@ -184,7 +184,7 @@ export default class Reserve extends BaseEntity {
     @Column({
         type: 'text',
     })
-    public channelType!: string; // GR BS CS SKY NW1 NW2 NW3 NW4 NW5 NW6
+    public channelType!: string; // tuner-provided broadcast type
 
     @Column({
         type: 'bigint',

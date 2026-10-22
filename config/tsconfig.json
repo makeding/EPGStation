@@ -1,7 +1,9 @@
 {
     "compilerOptions": {
-        "target": "ES2015",
-        "module": "commonjs",
+        "target": "ES2022",
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "types": ["node"],
         "sourceMap": true,
         "strict": true,
         "noImplicitAny": true,

@@ -151,7 +151,7 @@ export default class Program extends BaseEntity {
     public subGenre3!: number | null;
 
     @Column()
-    public channelType!: string; // GR BS CS SKY NW1 NW2 NW3 NW4 NW5 NW6
+    public channelType!: string; // tuner-provided broadcast type
 
     @Column()
     public channel!: string;

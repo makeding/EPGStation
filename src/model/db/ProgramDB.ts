@@ -1,29 +1,29 @@
 import { inject, injectable } from 'inversify';
 import { FindOptionsWhere, In, LessThan, LessThanOrEqual, MoreThan, MoreThanOrEqual, ObjectLiteral } from 'typeorm';
-import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
-import * as apid from '../../../api';
-import * as mapid from '../../../node_modules/mirakurun/api';
-import Program from '../../db/entities/Program';
-import Recorded from '../../db/entities/Recorded';
-import RecordedHistory from '../../db/entities/RecordedHistory';
-import DateUtil from '../../util/DateUtil';
-import StrUtil from '../../util/StrUtil';
-import IConfigFile from '../IConfigFile';
-import IConfiguration from '../IConfiguration';
-import ILogger from '../ILogger';
-import ILoggerModel from '../ILoggerModel';
-import IPromiseRetry from '../IPromiseRetry';
-import RecordingDuplicatePolicy, { DuplicateHistory } from '../operator/RecordingDuplicatePolicy';
-import DBUtil from './DBUtil';
-import IChannelTypeIndex from './IChannelTypeHash';
-import IDBOperator from './IDBOperator';
+import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity.js';
+import type * as apid from '../../../api.js';
+import Program from '../../db/entities/Program.js';
+import Recorded from '../../db/entities/Recorded.js';
+import RecordedHistory from '../../db/entities/RecordedHistory.js';
+import DateUtil from '../../util/DateUtil.js';
+import StrUtil from '../../util/StrUtil.js';
+import IConfigFile from '../IConfigFile.js';
+import IConfiguration from '../IConfiguration.js';
+import ILogger from '../ILogger.js';
+import ILoggerModel from '../ILoggerModel.js';
+import IPromiseRetry from '../IPromiseRetry.js';
+import RecordingDuplicatePolicy, { DuplicateHistory } from '../operator/RecordingDuplicatePolicy.js';
+import { TunerProgram, TunerServerId } from '../tuner/types.js';
+import DBUtil from './DBUtil.js';
+import IChannelTypeIndex from './IChannelTypeHash.js';
+import IDBOperator from './IDBOperator.js';
 import IProgramDB, {
     FindRuleOption,
     FindScheduleIdOption,
     FindScheduleOption,
     ProgramUpdateValues,
     ProgramWithOverlap,
-} from './IProgramDB';
+} from './IProgramDB.js';
 
 interface FindQuery {
     strs: string[];
@@ -38,6 +38,10 @@ interface KeywordOption {
     extended: boolean;
 }
 
+/**
+ * 番組（Program）情報の永続化を担う DB 層の実装。EPG更新で取得した番組情報の反映と、
+ * 番組表・rule のキーワード検索条件（`FindQuery`組み立て）に基づく番組検索を提供する。
+ */
 @injectable()
 export default class ProgramDB implements IProgramDB {
     private log: ILogger;
@@ -65,8 +69,8 @@ export default class ProgramDB implements IProgramDB {
      */
     public async insert(
         channelTypes: IChannelTypeIndex,
-        programs: mapid.Program[],
-        deleteChannelIds: mapid.ServiceId[] = [],
+        programs: TunerProgram[],
+        deleteChannelIds: TunerServerId[] = [],
     ): Promise<void> {
         const updateTime = new Date().getTime();
         const values: QueryDeepPartialEntity<Program>[] = [];
@@ -83,14 +87,18 @@ export default class ProgramDB implements IProgramDB {
         const connection = await this.op.getConnection();
         const queryRunner = connection.createQueryRunner();
 
-        // start transaction
-        await queryRunner.startTransaction();
-
         let hasError = false;
         try {
+            // start transaction
+            await queryRunner.startTransaction();
+
             // 削除
-            const deleteOption = deleteChannelIds.length === 0 ? {} : { channelId: In(deleteChannelIds) };
-            await queryRunner.manager.delete(Program, deleteOption);
+            // TypeORM 1.x は delete の空 criteria を拒否するため、全件削除は query builder で行う。
+            if (deleteChannelIds.length === 0) {
+                await queryRunner.manager.createQueryBuilder().delete().from(Program).execute();
+            } else {
+                await queryRunner.manager.delete(Program, { channelId: In(deleteChannelIds) });
+            }
 
             // 挿入処理
             for (const value of values) {
@@ -99,11 +107,22 @@ export default class ProgramDB implements IProgramDB {
 
             await queryRunner.commitTransaction();
         } catch (err: any) {
-            console.error(err);
+            this.log.system.error(err);
             hasError = true;
-            await queryRunner.rollbackTransaction();
+            if (queryRunner.isTransactionActive) {
+                try {
+                    await queryRunner.rollbackTransaction();
+                } catch (cleanupError) {
+                    this.log.system.error(cleanupError);
+                }
+            }
         } finally {
-            await queryRunner.release();
+            try {
+                await queryRunner.release();
+            } catch (cleanupError) {
+                this.log.system.error(cleanupError);
+                hasError = true;
+            }
         }
 
         if (hasError) {
@@ -120,7 +139,7 @@ export default class ProgramDB implements IProgramDB {
      */
     private createProgramValue(
         channelTypes: IChannelTypeIndex,
-        program: mapid.Program,
+        program: TunerProgram,
         updateTime: number,
     ): QueryDeepPartialEntity<Program> | null {
         if (typeof program.name === 'undefined') {
@@ -146,7 +165,7 @@ export default class ProgramDB implements IProgramDB {
         let subGenre2: number | null = null;
         let genre3: number | null = null;
         let subGenre3: number | null = null;
-        if (typeof program.genres !== 'undefined') {
+        if (typeof program.genres !== 'undefined' && program.genres.length > 0) {
             // 最大3つのジャンルを格納する
             if (program.genres[0].lv1 < 0xe) {
                 genre1 = program.genres[0].lv1;
@@ -268,7 +287,7 @@ export default class ProgramDB implements IProgramDB {
      * @param extended extended
      * @return string
      */
-    private createExtendedStr(extended: { [description: string]: string }): string {
+    private createExtendedStr(extended: Readonly<Record<string, string>>): string {
         let str = '';
         for (const key in extended) {
             if (key.slice(0, 1) === '◇') {
@@ -313,11 +332,11 @@ export default class ProgramDB implements IProgramDB {
         const connection = await this.op.getConnection();
         const queryRunner = connection.createQueryRunner();
 
-        // start transaction
-        await queryRunner.startTransaction();
-
         let hasError = false;
         try {
+            // start transaction
+            await queryRunner.startTransaction();
+
             // 削除処理
             for (const id of values.delete) {
                 await queryRunner.manager.delete(Program, id).catch(err => {
@@ -339,11 +358,22 @@ export default class ProgramDB implements IProgramDB {
 
             await queryRunner.commitTransaction();
         } catch (err: any) {
-            console.error(err);
+            this.log.system.error(err);
             hasError = true;
-            await queryRunner.rollbackTransaction();
+            if (queryRunner.isTransactionActive) {
+                try {
+                    await queryRunner.rollbackTransaction();
+                } catch (cleanupError) {
+                    this.log.system.error(cleanupError);
+                }
+            }
         } finally {
-            await queryRunner.release();
+            try {
+                await queryRunner.release();
+            } catch (cleanupError) {
+                this.log.system.error(cleanupError);
+                hasError = true;
+            }
         }
 
         if (hasError) {
@@ -463,17 +493,17 @@ export default class ProgramDB implements IProgramDB {
             .where(str, query.param)
             .andWhere(`${new Date().getTime()} <= program.endAt`)
             .orderBy('program.startAt', 'ASC')
-            .limit(option.limit);
+            // limit 0 は件数の制限なし（TypeORM 1.x の `limit(0)` は `LIMIT 0` になるため適用しない）
+            .limit(option.limit === 0 ? undefined : option.limit);
 
-        const result = await this.promieRetry.run(() => {
+        const programs = await this.promieRetry.run(() => {
             return queryBuilder.getMany();
         });
-
         const histories =
             option.reserveOption?.avoidDuplicate === true
-                ? await this.findDuplicateHistories(result)
+                ? await this.findDuplicateHistories(programs)
                 : new Map<number, DuplicateHistory[]>();
-        return result.map(program => {
+        return programs.map(program => {
             const overlap = (histories.get(program.channelId) ?? []).some(history =>
                 RecordingDuplicatePolicy.isDuplicate(program, history, option.reserveOption?.periodToAvoidDuplicate),
             );
@@ -529,7 +559,7 @@ export default class ProgramDB implements IProgramDB {
             // 正規表現
             const regexp = this.op.getRegexpStr(option.cs);
             const valueName = `${valueBaseName}Regexp`;
-            query.param[valueName] = keyword;
+            query.param[valueName] = StrUtil.toHalfRegExp(keyword);
             if (option.cs === true) {
                 if (option.name === true) {
                     or.push(`CAST(halfWidthName AS BINARY) ${regexp} :${valueName}`);
@@ -627,7 +657,7 @@ export default class ProgramDB implements IProgramDB {
      * @param query: FindQuery
      */
     private setChannelQuery(searchOption: apid.RuleSearchOption, query: FindQuery): void {
-        if (typeof searchOption.channelIds !== 'undefined') {
+        if (Array.isArray(searchOption.channelIds) && searchOption.channelIds.length > 0) {
             // in で channelId を列挙
             this.createInQuery(query, 'channelId', searchOption.channelIds);
         } else {
@@ -648,125 +678,14 @@ export default class ProgramDB implements IProgramDB {
             if (!!searchOption.SKY === true) {
                 channelTypes.push('SKY');
             }
-            if (!!searchOption.NW1 === true) {
-                channelTypes.push('NW1');
+            if (!!searchOption.BS4K === true) {
+                channelTypes.push('BS4K');
             }
-            if (!!searchOption.NW2 === true) {
-                channelTypes.push('NW2');
-            }
-            if (!!searchOption.NW3 === true) {
-                channelTypes.push('NW3');
-            }
-            if (!!searchOption.NW4 === true) {
-                channelTypes.push('NW4');
-            }
-            if (!!searchOption.NW5 === true) {
-                channelTypes.push('NW5');
-            }
-            if (!!searchOption.NW6 === true) {
-                channelTypes.push('NW6');
-            }
-            if (!!searchOption.NW7 === true) {
-                channelTypes.push('NW7');
-            }
-            if (!!searchOption.NW8 === true) {
-                channelTypes.push('NW8');
-            }
-            if (!!searchOption.NW9 === true) {
-                channelTypes.push('NW9');
-            }
-            if (!!searchOption.NW10 === true) {
-                channelTypes.push('NW10');
-            }
-            if (!!searchOption.NW11 === true) {
-                channelTypes.push('NW11');
-            }
-            if (!!searchOption.NW12 === true) {
-                channelTypes.push('NW12');
-            }
-            if (!!searchOption.NW13 === true) {
-                channelTypes.push('NW13');
-            }
-            if (!!searchOption.NW14 === true) {
-                channelTypes.push('NW14');
-            }
-            if (!!searchOption.NW15 === true) {
-                channelTypes.push('NW15');
-            }
-            if (!!searchOption.NW16 === true) {
-                channelTypes.push('NW16');
-            }
-            if (!!searchOption.NW17 === true) {
-                channelTypes.push('NW17');
-            }
-            if (!!searchOption.NW18 === true) {
-                channelTypes.push('NW18');
-            }
-            if (!!searchOption.NW19 === true) {
-                channelTypes.push('NW19');
-            }
-            if (!!searchOption.NW20 === true) {
-                channelTypes.push('NW20');
-            }
-            if (!!searchOption.NW21 === true) {
-                channelTypes.push('NW21');
-            }
-            if (!!searchOption.NW22 === true) {
-                channelTypes.push('NW22');
-            }
-            if (!!searchOption.NW23 === true) {
-                channelTypes.push('NW23');
-            }
-            if (!!searchOption.NW24 === true) {
-                channelTypes.push('NW24');
-            }
-            if (!!searchOption.NW25 === true) {
-                channelTypes.push('NW25');
-            }
-            if (!!searchOption.NW26 === true) {
-                channelTypes.push('NW26');
-            }
-            if (!!searchOption.NW27 === true) {
-                channelTypes.push('NW27');
-            }
-            if (!!searchOption.NW28 === true) {
-                channelTypes.push('NW28');
-            }
-            if (!!searchOption.NW29 === true) {
-                channelTypes.push('NW29');
-            }
-            if (!!searchOption.NW30 === true) {
-                channelTypes.push('NW30');
-            }
-            if (!!searchOption.NW31 === true) {
-                channelTypes.push('NW31');
-            }
-            if (!!searchOption.NW32 === true) {
-                channelTypes.push('NW32');
-            }
-            if (!!searchOption.NW33 === true) {
-                channelTypes.push('NW33');
-            }
-            if (!!searchOption.NW34 === true) {
-                channelTypes.push('NW34');
-            }
-            if (!!searchOption.NW35 === true) {
-                channelTypes.push('NW35');
-            }
-            if (!!searchOption.NW36 === true) {
-                channelTypes.push('NW36');
-            }
-            if (!!searchOption.NW37 === true) {
-                channelTypes.push('NW37');
-            }
-            if (!!searchOption.NW38 === true) {
-                channelTypes.push('NW38');
-            }
-            if (!!searchOption.NW39 === true) {
-                channelTypes.push('NW39');
-            }
-            if (!!searchOption.NW40 === true) {
-                channelTypes.push('NW40');
+            for (let i = 1; i <= 40; i += 1) {
+                const type = `NW${i}`;
+                if (!!(searchOption as unknown as Record<string, unknown>)[type] === true) {
+                    channelTypes.push(type);
+                }
             }
             this.createInQuery(query, 'channelType', channelTypes);
         }
@@ -974,10 +893,6 @@ export default class ProgramDB implements IProgramDB {
         query.param[column] = values;
     }
 
-    /**
-     * Load existing history with episode metadata from retained recordings, without a schema change.
-     * A title-only history remains usable only if the title itself identifies the episode.
-     */
     private async findDuplicateHistories(programs: Program[]): Promise<Map<number, DuplicateHistory[]>> {
         const channels = [
             ...new Set(
@@ -990,8 +905,8 @@ export default class ProgramDB implements IProgramDB {
         if (channels.length === 0) {
             return histories;
         }
+
         const connection = await this.op.getConnection();
-        const now = Date.now();
         const query = connection
             .createQueryBuilder()
             .select('history.name', 'historyName')
@@ -1002,7 +917,7 @@ export default class ProgramDB implements IProgramDB {
             .from(RecordedHistory, 'history')
             .leftJoin(Recorded, 'recorded', 'recorded.channelId = history.channelId AND recorded.endAt = history.endAt')
             .where('history.channelId IN (:...channels)', { channels })
-            .andWhere('history.endAt <= :now', { now });
+            .andWhere('history.endAt <= :now', { now: Date.now() });
         const rows = await this.promieRetry.run(() =>
             query.getRawMany<{
                 historyName: string;
@@ -1012,6 +927,7 @@ export default class ProgramDB implements IProgramDB {
                 description: string | null;
             }>(),
         );
+
         for (const row of rows) {
             if (
                 row.recordedName !== null &&
@@ -1020,14 +936,13 @@ export default class ProgramDB implements IProgramDB {
                 continue;
             }
             const channelId = Number(row.channelId);
-            const history: DuplicateHistory = {
+            const items = histories.get(channelId) ?? [];
+            items.push({
                 name: row.recordedName ?? row.historyName,
                 description: row.description,
                 channelId,
                 endAt: Number(row.endAt),
-            };
-            const items = histories.get(channelId) ?? [];
-            items.push(history);
+            });
             histories.set(channelId, items);
         }
         return histories;

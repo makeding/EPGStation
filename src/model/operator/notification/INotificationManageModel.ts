@@ -1,6 +1,6 @@
-import Recorded from '../../../db/entities/Recorded';
-import Reserve from '../../../db/entities/Reserve';
-import { StorageWarning } from '../../IConfigFile';
+import Recorded from '../../../db/entities/Recorded.js';
+import Reserve from '../../../db/entities/Reserve.js';
+import { StorageWarning } from '../../IConfigFile.js';
 
 export default interface INotificationManageModel {
     addRecordingPreStart(reserve: Reserve): void;

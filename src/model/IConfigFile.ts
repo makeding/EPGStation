@@ -1,6 +1,10 @@
-import * as apid from '../../api';
-import * as Enums from '../Enums';
+import type * as apid from '../../api.js';
+import * as Enums from '../Enums.js';
 
+/**
+ * HTTPS で待ち受ける場合の証明書一式とポート設定。config.yml の `https` キーに対応する。
+ * 未設定（`IConfigFile.https`が`undefined`）の場合はHTTPSを待ち受けない。
+ */
 export interface HttpsConfig {
     port: number;
     key: string; // 秘密鍵
@@ -9,16 +13,24 @@ export interface HttpsConfig {
     socketioPort?: number;
 }
 
+/**
+ * 録画保存先ディレクトリ1件分の設定。config.yml `recorded` 配列の要素に対応する
+ * （複数指定でき、`recording/RecordingUtilModel`側が空き容量等を見て使用先を選ぶ）。
+ */
 export interface RecordedDirInfo {
     name: string;
     path: string;
-    warningThreshold?: number; // 容量警告閾値 (MB)
-    criticalThreshold?: number; // 容量重大警告閾値 (MB)
+    warningThreshold?: number;
+    criticalThreshold?: number;
     limitThreshold?: number; // 空き容量限界閾値 (MB)
     action?: 'remove' | 'none'; // 空き容量限界値を超えたときの動作
     limitCmd?: string; // 空き容量限界値を超えたときに実行するコマンド
 }
 
+/**
+ * クライアントから外部アプリを起動させるための URL scheme 設定。`m2ts`/`video`/`download`
+ * それぞれの配信種別ごとに、OSやプラットフォーム別のscheme文字列を保持する。
+ */
 export interface URLSchemeInfo {
     ios?: string;
     android?: string;
@@ -26,11 +38,16 @@ export interface URLSchemeInfo {
     win?: string;
 }
 
+/**
+ * 配信・エンコードで使うコマンド定義1件（表示名と、実行するコマンドのテンプレート文字列）。
+ * `cmd`が未設定の場合はコマンド実行を伴わない方式（後段の実装依存）を表す。
+ */
 export interface StreamingCmd {
     name: string;
     cmd?: string;
 }
 
+/** Kodi 連携（録画済みファイルの送信先）1台分の接続設定。config.yml `kodiHosts` 配列の要素。 */
 export interface KodiInfo {
     name: string;
     host: string;
@@ -47,9 +64,7 @@ export type NotificationEvent =
     | 'recordingRetryOver'
     | 'storageWarning';
 export type NotificationTrigger = NotificationEvent | NotificationEvent[];
-
 export type StorageWarningLevel = 'warning' | 'critical' | 'limit';
-
 export interface StorageWarning {
     level: StorageWarningLevel;
     name: string;
@@ -57,7 +72,6 @@ export interface StorageWarning {
     free: number;
     threshold: number;
 }
-
 export interface NotificationTelegramConfig {
     name?: string;
     trigger: NotificationTrigger;
@@ -69,7 +83,6 @@ export interface NotificationTelegramConfig {
     protectContent?: boolean;
     messageThreadId?: number;
 }
-
 export interface NotificationWebhookConfig {
     name?: string;
     trigger: NotificationTrigger;
@@ -82,9 +95,7 @@ export interface NotificationWebhookConfig {
     delay?: number;
     timeout?: number;
 }
-
 export interface NotificationConfig {
-    // 録画開始 n 分前通知の時間 (分)。0 以下なら通知しない。デフォルト 15
     preNotifyMinutes?: number;
     telegram?: NotificationTelegramConfig[];
     webhooks?: NotificationWebhookConfig[];
@@ -99,6 +110,8 @@ export default interface IConfigFile {
     clientSocketioPort?: number;
     https?: HttpsConfig;
     mirakurunPath: string;
+    tunerRestRequestTimeoutMs?: unknown;
+    tunerStreamEstablishmentTimeoutMs?: unknown;
 
     subDirectory?: string;
 
@@ -113,14 +126,18 @@ export default interface IConfigFile {
     sqlite?: {
         extensions?: string[];
         regexp?: boolean;
+        wal?: boolean;
+        busyTimeout?: number;
     };
     mysql?: {
         host: string;
         user: string;
         port: number;
+        socketPath?: string;
         password: string;
         database: string;
         charset?: string;
+        ssl?: unknown;
     };
     postgres?: {
         host: string;
@@ -174,33 +191,36 @@ export default interface IConfigFile {
 
     // ストレージ空き容量チェック間隔 (秒)
     storageLimitCheckIntervalTime: number;
+    storageLimitCommandTimeoutMs?: unknown;
 
     // サムネイル
     thumbnail: string;
     thumbnailCmd: string;
     thumbnailSize: string;
     thumbnailPosition: number;
+    thumbnailMaxPending: number;
+
+    recordingBufferSize?: number;
+    recordingBufferWarningThreshold?: number;
+    recordingWriteHighWaterMark?: number;
+
+    // 録画中のリアルタイムエンコード（未設定なら無効）
+    realtimeEncode?: {
+        name: string;
+        cmd: string;
+        suffix: string;
+        durationTolerance?: number;
+        maxBufferSize?: number;
+    };
 
     // drop log
     dropLog: string;
     isEnabledDropCheck: boolean; // drop check を有効にするか
 
-    // 録画バッファ設定
-    recordingBufferSize?: number; // 録画バッファサイズ (MB)、デフォルト 512
-    recordingBufferWarningThreshold?: number; // 警告閾値 (パーセント)、デフォルト 80
-    recordingWriteHighWaterMark?: number; // WriteStream バッファ (KB)、デフォルト 4096
-
-    // 録画中のリアルタイムエンコード (未設定なら無効)
-    realtimeEncode?: {
-        name: string; // VideoFile に表示する名前
-        cmd: string; // stdin から入力し stdout に出力するコマンド
-        suffix: string; // 完成ファイルの suffix (例: .hevc.ts)
-        durationTolerance?: number; // 元ファイルとの許容時間差 (秒)、デフォルト 2
-        maxBufferSize?: number; // 旁路入力キュー上限 (MB)、デフォルト 256
-    };
-
     // upload
     uploadTempDir: string;
+    concurrentUploadNum: number;
+    uploadReceiveTimeoutMs: number;
 
     ffmpeg: string;
     ffprobe: string;
@@ -209,6 +229,14 @@ export default interface IConfigFile {
     // エンコード設定
     encodeProcessNum: number; // エンコード、ストリーミング最大プロセス数
     concurrentEncodeNum: number; // 同時エンコード数
+    encodeQueueLimit: number;
+    // 待機中のエンコードを開始しない時間帯 (HH:mm、start 以上 end 未満、start > end は日跨ぎ)
+    encodeSuspendTimes: {
+        start: string;
+        end: string;
+    }[];
+    // 再起動で中断されたエンコードの出力途中のファイルを、再起動後に削除するか
+    encodeRemoveInterruptedOutput: boolean;
     encode: {
         name: string;
         cmd: string;
@@ -218,6 +246,7 @@ export default interface IConfigFile {
 
     // 予約定期更新時のログ出力を抑えるか
     isSuppressReservesUpdateAllLog: boolean;
+    notification?: NotificationConfig;
 
     // 各種フックコマンド
     reserveNewAddtionCommand?: string; // 予約新規追加
@@ -229,7 +258,8 @@ export default interface IConfigFile {
     recordingFinishCommand?: string; // 録画終了
     recordingFailedCommand?: string; // 録画中のエラー
     encodingFinishCommand?: string; // エンコード終了
-    notification?: NotificationConfig; // 通知設定
+    hookCommandMaxPending: number;
+    hookCommandTimeoutMs: number;
 
     // 視聴 URL Scheme 設定
     urlscheme: {

@@ -1,5 +1,13 @@
-import * as apid from '../../../api';
+import type * as apid from '../../../api.js';
+import type {
+    RecordedResourceUseKind,
+    RecordedUseAcquireStatus,
+    RecordedUseReleaseStatus,
+    RecordedUseSnapshotPayload,
+} from './IRecordedResourceUse.js';
+import type { ServiceProcessStart } from './IServiceProcessReport.js';
 
+/** 親子プロセス間メッセージ（`SendMessage`/`ReplayMessage`等）を対応付けるための一意な識別子。 */
 export type MessageId = number;
 
 /**
@@ -17,9 +25,14 @@ export interface NotifyClientMessage extends ParentMessage {
     type: 'notifyClient';
 }
 
+/**
+ * 親プロセスから子プロセスへのエンコード追加要求。`value`は追加するエンコードの依頼内容、`encodeId`は
+ * 親側の依頼記録窓口が記録した依頼の識別番号。
+ */
 export interface PushEncodeMessage extends ParentMessage {
     type: 'pushEncode';
     value: apid.AddEncodeProgramOption;
+    encodeId: apid.EncodeId;
 }
 
 /**
@@ -47,6 +60,62 @@ export interface ReplayMessage {
     error?: string;
 }
 
+/** 子プロセスから親プロセスへの、録画済みファイルの利用権（lease）取得要求。 */
+export interface RecordedUseAcquireMessage {
+    readonly type: 'recordedUseAcquire';
+    readonly id: MessageId;
+    readonly recordedId: number;
+    readonly kind: RecordedResourceUseKind;
+}
+
+/** `RecordedUseAcquireMessage`（同じ`id`）への応答。`status`が取得結果を表す。 */
+export interface RecordedUseAcquireReplyMessage {
+    readonly type: 'recordedUseAcquireReply';
+    readonly id: MessageId;
+    readonly status: RecordedUseAcquireStatus;
+}
+
+/** 子プロセスから親プロセスへの、取得済み利用権の解放要求。`acquisitionRequestId`は対応する
+ *  `RecordedUseAcquireMessage.id`。 */
+export interface RecordedUseReleaseMessage {
+    readonly type: 'recordedUseRelease';
+    readonly acquisitionRequestId: MessageId;
+}
+
+/** `RecordedUseReleaseMessage`（同じ`acquisitionRequestId`）への応答。`status`が解放結果を表す。 */
+export interface RecordedUseReleaseReplyMessage {
+    readonly type: 'recordedUseReleaseReply';
+    readonly acquisitionRequestId: MessageId;
+    readonly status: RecordedUseReleaseStatus;
+}
+
+/** 親プロセスから子プロセスへの、その時点で保持している録画使用状況のsnapshot要求。 */
+export interface RecordedUseSnapshotRequestMessage {
+    readonly type: 'recordedUseSnapshotRequest';
+    readonly id: MessageId;
+}
+
+/** `RecordedUseSnapshotRequestMessage`（同じ`id`）への応答。子プロセス側が把握している使用状況を返す。 */
+export interface RecordedUseSnapshotReplyMessage {
+    readonly type: 'recordedUseSnapshotReply';
+    readonly id: MessageId;
+    readonly snapshot: RecordedUseSnapshotPayload;
+}
+
+/**
+ * 子プロセスから親プロセスへの、外部プロセスの開始の知らせ。応答しない。管理側では
+ * `ServiceChildProcessRegistry`が受け取る。
+ */
+export interface ServiceProcessStartedMessage extends ServiceProcessStart {
+    readonly type: 'serviceProcessStarted';
+}
+
+/** 子プロセスから親プロセスへの、外部プロセスの終了の知らせ。応答しない。 */
+export interface ServiceProcessEndedMessage {
+    readonly type: 'serviceProcessEnded';
+    readonly pid: number;
+}
+
 /**
  * モデル名
  */
@@ -58,6 +127,7 @@ export enum ModelName {
     rule = 'rule',
     thumbnail = 'thumbnail',
     encodeEvent = 'encodeEvent',
+    encodeQueue = 'encodeQueue',
 }
 
 /**
@@ -118,7 +188,6 @@ export enum RuleFuntions {
     enable = 'enable',
     disable = 'disable',
     delete = 'delete',
-    deletes = 'deletes',
 }
 
 /**
@@ -136,4 +205,15 @@ export enum ThumbnailFunctions {
  */
 export enum OperatorEncodeEventFunctions {
     emitFinishEncode = 'emitFinishEncode',
+}
+
+/**
+ * encode queue（エンコードの依頼の記録）の関数定義
+ */
+export enum EncodeQueueFunctions {
+    add = 'add',
+    abandon = 'abandon',
+    updateOutputPath = 'updateOutputPath',
+    remove = 'remove',
+    list = 'list',
 }

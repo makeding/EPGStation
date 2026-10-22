@@ -1,38 +1,35 @@
 import { inject, injectable } from 'inversify';
-import mirakurun from 'mirakurun';
-import * as apid from '../../../../api';
-import Channel from '../../../db/entities/Channel';
-import IChannelDB from '../../db/IChannelDB';
-import IMirakurunClientModel from '../../IMirakurunClientModel';
-import IChannelApiModel, { IChannelApiModelError } from './IChannelApiModel';
+import type * as apid from '../../../../api.js';
+import Channel from '../../../db/entities/Channel.js';
+import IChannelDB from '../../db/IChannelDB.js';
+import { TunerServerAccess } from '../../tuner/types.js';
+import IChannelApiModel, { IChannelApiModelError } from './IChannelApiModel.js';
 
+/** `IChannelApiModel` の実装。詳細は `IChannelApiModel` を参照。 */
 @injectable()
 class ChannelApiModel implements IChannelApiModel {
     private channelDB: IChannelDB;
-    private mirakurunClient: mirakurun;
+    private tunerServerAccess: TunerServerAccess;
 
     constructor(
         @inject('IChannelDB') channelDB: IChannelDB,
-        @inject('IMirakurunClientModel') mirakurunClientModel: IMirakurunClientModel,
+        @inject('TunerServerAccess') tunerServerAccess: TunerServerAccess,
     ) {
         this.channelDB = channelDB;
-        this.mirakurunClient = mirakurunClientModel.getClient();
+        this.tunerServerAccess = tunerServerAccess;
     }
 
     /**
      * チャンネル情報取得
-     * @param channelId: apid.ChannelId
      * @return Promise<ChannelItem[]>
      */
-    public async getChannels(channelId: apid.ChannelId): Promise<apid.ChannelItem[]> {
+    public async getChannels(channelId?: apid.ChannelId): Promise<apid.ChannelItem[]> {
         let channels: Channel[] = [];
         if (!channelId) {
             channels = await this.channelDB.findAll(true);
         } else {
             const channel = await this.channelDB.findId(channelId);
-            if (channel) {
-                channels = [channel];
-            }
+            if (channel) channels = [channel];
         }
 
         return channels.map(c => {
@@ -68,7 +65,7 @@ class ChannelApiModel implements IChannelApiModel {
             throw new Error(IChannelApiModelError.NOT_FOUND);
         }
 
-        return this.mirakurunClient.getLogoImage(channelId);
+        return this.tunerServerAccess.getLogo(channelId);
     }
 }
 

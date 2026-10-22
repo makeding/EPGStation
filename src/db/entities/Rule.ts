@@ -137,6 +137,11 @@ export default class Rule extends BaseEntity {
     @Column({
         default: false,
     })
+    public BS4K: boolean = false; // BS4K
+
+    @Column({
+        default: false,
+    })
     public NW1: boolean = false; // NW
 
     @Column({

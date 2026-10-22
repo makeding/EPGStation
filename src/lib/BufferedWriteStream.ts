@@ -1,5 +1,5 @@
 import * as stream from 'stream';
-import ILogger from '../model/ILogger';
+import ILogger from '../model/ILogger.js';
 
 export interface BufferedWriteStreamOptions {
     maxBufferSize: number; // 最大バッファサイズ (bytes)
@@ -131,16 +131,18 @@ class BufferedWriteStream extends stream.Writable {
             const chunk = this.chunks[0];
             const canWrite = this.writeStream.write(chunk);
 
+            // Writable.write() returning false means that the chunk was accepted and
+            // only asks the caller to wait for `drain` before sending another one.
+            // Remove it from our queue immediately so it is not written a second time.
+            this.chunks.shift();
+            this.totalBuffered -= chunk.length;
+
             if (!canWrite) {
                 this.drainPending = true;
                 this.isWriting = false;
 
                 return;
             }
-
-            // 書き込み成功、バッファから削除
-            this.chunks.shift();
-            this.totalBuffered -= chunk.length;
         }
 
         this.isWriting = false;

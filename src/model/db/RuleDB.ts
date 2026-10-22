@@ -1,26 +1,31 @@
 import { inject, injectable } from 'inversify';
-import * as apid from '../../../api';
-import Rule from '../../db/entities/Rule';
-import StrUtil from '../../util/StrUtil';
-import IPromiseRetry from '../IPromiseRetry';
-import DBUtil from './DBUtil';
-import IDBOperator from './IDBOperator';
-import IRuleDB, { RuleWithCnt } from './IRuleDB';
+import type * as apid from '../../../api.js';
+import Rule from '../../db/entities/Rule.js';
+import StrUtil from '../../util/StrUtil.js';
+import ILogger from '../ILogger.js';
+import ILoggerModel from '../ILoggerModel.js';
+import IPromiseRetry from '../IPromiseRetry.js';
+import DBUtil from './DBUtil.js';
+import IDBOperator from './IDBOperator.js';
+import IRuleDB, { RuleWithCnt } from './IRuleDB.js';
 
 const normalizeSaveOptionText = (value: string | undefined): string | null => {
-    if (typeof value === 'undefined' || value.trim().length === 0) {
-        return null;
-    }
-
-    return value;
+    return typeof value === 'undefined' || value.trim().length === 0 ? null : value;
 };
 
+/** `IRuleDB` の実装。詳細は `IRuleDB` を参照。 */
 @injectable()
 export default class RuleDB implements IRuleDB {
+    private log: ILogger;
     private op: IDBOperator;
     private promieRetry: IPromiseRetry;
 
-    constructor(@inject('IDBOperator') op: IDBOperator, @inject('IPromiseRetry') promieRetry: IPromiseRetry) {
+    constructor(
+        @inject('ILoggerModel') logger: ILoggerModel,
+        @inject('IDBOperator') op: IDBOperator,
+        @inject('IPromiseRetry') promieRetry: IPromiseRetry,
+    ) {
+        this.log = logger.getLogger();
         this.op = op;
         this.promieRetry = promieRetry;
     }
@@ -35,13 +40,13 @@ export default class RuleDB implements IRuleDB {
         const connection = await this.op.getConnection();
         const queryRunner = connection.createQueryRunner();
 
-        // start transaction
-        await queryRunner.startTransaction();
-
         let hasError = false;
         try {
+            // start transaction
+            await queryRunner.startTransaction();
+
             // 削除
-            await queryRunner.manager.delete(Rule, {});
+            await queryRunner.manager.createQueryBuilder().delete().from(Rule).execute();
 
             // 挿入処理
             for (const item of items) {
@@ -49,11 +54,22 @@ export default class RuleDB implements IRuleDB {
             }
             await queryRunner.commitTransaction();
         } catch (err: any) {
-            console.error(err);
-            hasError = err;
-            await queryRunner.rollbackTransaction();
+            this.log.system.error(err);
+            hasError = true;
+            if (queryRunner.isTransactionActive) {
+                try {
+                    await queryRunner.rollbackTransaction();
+                } catch (cleanupError) {
+                    this.log.system.error(cleanupError);
+                }
+            }
         } finally {
-            await queryRunner.release();
+            try {
+                await queryRunner.release();
+            } catch (cleanupError) {
+                this.log.system.error(cleanupError);
+                hasError = true;
+            }
         }
 
         if (hasError) {
@@ -91,7 +107,6 @@ export default class RuleDB implements IRuleDB {
         // updateCnt 更新
         const convertedRule = this.convertRuleToDBRule(newRule);
         convertedRule.updateCnt = oldRule.updateCnt + 1;
-        // Omitted by older clients means unchanged; explicit null clears the Bangumi link.
         if (typeof newRule.bangumiId === 'undefined') {
             convertedRule.bangumiId = oldRule.bangumiId ?? null;
         }
@@ -244,6 +259,7 @@ export default class RuleDB implements IRuleDB {
             BS: !!rule.searchOption.BS,
             CS: !!rule.searchOption.CS,
             SKY: !!rule.searchOption.SKY,
+            BS4K: !!rule.searchOption.BS4K,
             NW1: !!rule.searchOption.NW1,
             NW2: !!rule.searchOption.NW2,
             NW3: !!rule.searchOption.NW3,
@@ -284,7 +300,6 @@ export default class RuleDB implements IRuleDB {
             NW38: !!rule.searchOption.NW38,
             NW39: !!rule.searchOption.NW39,
             NW40: !!rule.searchOption.NW40,
-
             channelIds:
                 typeof rule.searchOption.channelIds === 'undefined'
                     ? null
@@ -387,6 +402,7 @@ export default class RuleDB implements IRuleDB {
                 BS: rule.BS,
                 CS: rule.CS,
                 SKY: rule.SKY,
+                BS4K: rule.BS4K,
                 NW1: rule.NW1,
                 NW2: rule.NW2,
                 NW3: rule.NW3,
@@ -568,14 +584,14 @@ export default class RuleDB implements IRuleDB {
             queryBuilder = queryBuilder.andWhere(DBUtil.createOrQuery(or), values);
         }
 
-        // offset
-        if (typeof option.offset !== 'undefined') {
-            queryBuilder = queryBuilder.skip(option.offset);
+        // offset・limit
+        // limit 0 は件数の制限なし（TypeORM 1.x の `take(0)` は `LIMIT 0` になるため take を付けない）
+        const pagination = DBUtil.resolvePagination(option);
+        if (typeof pagination.skip !== 'undefined') {
+            queryBuilder = queryBuilder.skip(pagination.skip);
         }
-
-        // limit
-        if (typeof option.limit !== 'undefined') {
-            queryBuilder = queryBuilder.take(option.limit);
+        if (typeof pagination.take !== 'undefined') {
+            queryBuilder = queryBuilder.take(pagination.take);
         }
 
         // order by
@@ -638,14 +654,14 @@ export default class RuleDB implements IRuleDB {
             queryBuilder = queryBuilder.andWhere(DBUtil.createOrQuery(or), values);
         }
 
-        // offset
-        if (typeof option.offset !== 'undefined') {
-            queryBuilder = queryBuilder.skip(option.offset);
+        // offset・limit
+        // limit 0 は件数の制限なし（TypeORM 1.x の `take(0)` は `LIMIT 0` になるため take を付けない）
+        const pagination = DBUtil.resolvePagination(option);
+        if (typeof pagination.skip !== 'undefined') {
+            queryBuilder = queryBuilder.skip(pagination.skip);
         }
-
-        // limit
-        if (typeof option.limit !== 'undefined') {
-            queryBuilder = queryBuilder.take(option.limit);
+        if (typeof pagination.take !== 'undefined') {
+            queryBuilder = queryBuilder.take(pagination.take);
         }
 
         const result = await this.promieRetry.run(() => {

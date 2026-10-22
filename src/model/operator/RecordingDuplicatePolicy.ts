@@ -1,4 +1,4 @@
-import StrUtil from '../../util/StrUtil';
+import StrUtil from '../../util/StrUtil.js';
 
 interface EpisodeMetadata {
     name: string;

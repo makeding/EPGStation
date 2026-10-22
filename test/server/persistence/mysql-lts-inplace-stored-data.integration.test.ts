@@ -1,0 +1,135 @@
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
+
+import { createOperator, type TestLogger } from './harness';
+import {
+    captureOfficialMySqlLtsSchemaSnapshot,
+    cleanupOfficialMySqlLtsSession,
+    provisionOfficialMySqlLts,
+} from './mysql-lts-runtime';
+
+const logger = (): TestLogger => ({ system: { error: vi.fn(), info: vi.fn() } });
+const fixtureRoot = resolve(process.cwd(), 'test/server/fixtures/persistence/mysql-inplace');
+const expectedMigrations = [
+    'Init1601186196169',
+    'AddRawExtended1624084351785',
+    'AddEventRelay1716647383635',
+    'AddRemoveDataBroadcast1782100000000',
+    'AddRuleGRALT1782200000000',
+    'AddRuleBangumiId1782300000000',
+    'AddRuleBS4K1790497623885',
+    'AddEncodeQueue1791894978617',
+] as const;
+
+describe('DBOperator official MySQL LTS in-place stored data', () => {
+    it('[PERSIST-8.3-INPLACE-SCHEMA-ORACLE] distinguishes index-only schema changes that column names would miss', async () => {
+        const createWithoutIndex =
+            'recorded\tCREATE TABLE `recorded` (\n  `id` int NOT NULL,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB';
+        const createWithIndex =
+            'recorded\tCREATE TABLE `recorded` (\n  `id` int NOT NULL,\n  UNIQUE INDEX `REL_x` (`dropLogFileId`),\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB';
+        const apply = (createTable: string) => async (sql: string): Promise<string> => {
+            if (sql.includes('information_schema.TABLES')) {
+                return 'recorded';
+            }
+            if (sql.includes('SHOW CREATE TABLE')) {
+                return createTable;
+            }
+            throw new Error(`unexpected sql: ${sql}`);
+        };
+
+        expect(await captureOfficialMySqlLtsSchemaSnapshot(apply(createWithoutIndex))).not.toEqual(
+            await captureOfficialMySqlLtsSchemaSnapshot(apply(createWithIndex)),
+        );
+    });
+
+    it('[PERSIST-8.3-INPLACE-STORED-DATA] upgrades populated prior-fork rows with only the pending BS4K and encode_queue migrations', async () => {
+        const [schemaSql, seedSql] = await Promise.all([
+            readFile(resolve(fixtureRoot, 'schema.sql'), 'utf8'),
+            readFile(resolve(fixtureRoot, 'seed.sql'), 'utf8'),
+        ]);
+
+        const runtime = await provisionOfficialMySqlLts();
+        let schema: Awaited<ReturnType<typeof runtime.createSchema>> | undefined;
+        let operator: ReturnType<typeof createOperator> | undefined;
+        let source: { isInitialized: boolean } | undefined;
+        try {
+            const activeSchema = await runtime.createSchema();
+            schema = activeSchema;
+            await activeSchema.applySql(schemaSql);
+            await activeSchema.applySql(seedSql);
+            const schemaBefore = await captureOfficialMySqlLtsSchemaSnapshot(sql => activeSchema.applySql(sql));
+            // `schemaSql` fixes an LTS DB as it existed before the BS4K rule-column migration, so
+            // connecting the operator here is expected to apply exactly the two pending migrations
+            // (adding `rule`.`BS4K`, then creating the `encode_queue` table) and nothing else. Capture the
+            // `rule` table's own CREATE TABLE separately so the assertions below can prove that those
+            // migrations changed only this table and added only the new one.
+            const stabilize = (createTable: string) => createTable.replace(/AUTO_INCREMENT=\d+/gu, 'AUTO_INCREMENT=N');
+            const ruleDdlBefore = stabilize(await activeSchema.applySql('SHOW CREATE TABLE `rule`'));
+            expect(ruleDdlBefore).not.toContain('`BS4K`');
+            expect(schemaBefore).not.toContain('encode_queue');
+            operator = createOperator({ dbtype: 'mysql', mysql: activeSchema.config }, logger());
+            source = await operator.getConnection();
+
+            const channels = (await source.query('SELECT id, name FROM channel ORDER BY id ASC')) as Array<{
+                id: string | number;
+                name: string;
+            }>;
+            const programs = (await source.query('SELECT id, name FROM program ORDER BY id ASC')) as Array<{
+                id: string | number;
+                name: string;
+            }>;
+            expect(channels).toEqual([{ id: expect.anything(), name: 'synthetic-gr-channel' }]);
+            expect(String(channels[0].id)).toBe('3273601024');
+            expect(programs).toEqual([{ id: expect.anything(), name: 'synthetic-program' }]);
+            expect(String(programs[0].id)).toBe('327360102400001');
+            const rules = (await source.query(
+                'SELECT id, keyword, `GR-ALT`, NW1, NW40, removeDataBroadcast, bangumi_id, BS4K FROM rule ORDER BY id ASC',
+            )) as Array<Record<string, unknown>>;
+            expect(rules).toEqual([
+                {
+                    id: 41,
+                    keyword: 'synthetic-fork-rule',
+                    'GR-ALT': 1,
+                    NW1: 1,
+                    NW40: 1,
+                    removeDataBroadcast: 1,
+                    bangumi_id: 4321,
+                    BS4K: 0,
+                },
+            ]);
+
+            await source.query("UPDATE program SET name = 'synthetic-program-updated' WHERE id = 327360102400001");
+            const reread = (await source.query('SELECT name FROM program WHERE id = 327360102400001')) as Array<{
+                name: string;
+            }>;
+            expect(reread).toEqual([{ name: 'synthetic-program-updated' }]);
+
+            const migrations = (await source.query('SELECT name FROM migrations ORDER BY id ASC')) as Array<{
+                name: string;
+            }>;
+            expect(migrations.map(row => row.name)).toEqual([...expectedMigrations]);
+
+            const ruleDdlAfter = stabilize(await activeSchema.applySql('SHOW CREATE TABLE `rule`'));
+            expect(ruleDdlAfter).toContain('`BS4K` tinyint NOT NULL DEFAULT');
+            const encodeQueueDdl = stabilize(await activeSchema.applySql('SHOW CREATE TABLE `encode_queue`'));
+            expect(encodeQueueDdl).toContain('`id` bigint NOT NULL');
+            expect(encodeQueueDdl).toContain('`createdAt` bigint NOT NULL');
+            const schemaAfter = await captureOfficialMySqlLtsSchemaSnapshot(sql => activeSchema.applySql(sql));
+            expect(schemaAfter).not.toBe(schemaBefore);
+            // Removing the new `encode_queue` table (which sorts between other tables, so it is followed by
+            // the joining newline) and substituting the post-migration `rule` DDL back for its
+            // pre-migration form must reproduce `schemaBefore` byte-for-byte: proves the pending migrations
+            // added that one table, changed the `rule` table only, and left every other table (including
+            // `migrations`' own structure) untouched.
+            const withoutEncodeQueue = schemaAfter.split(`${encodeQueueDdl}\n`);
+            expect(withoutEncodeQueue).toHaveLength(2);
+            expect(withoutEncodeQueue.join('').split(ruleDdlAfter).join(ruleDdlBefore)).toBe(schemaBefore);
+
+            await expect(operator.closeConnection()).resolves.toBeUndefined();
+            expect(source.isInitialized).toBe(false);
+        } finally {
+            await cleanupOfficialMySqlLtsSession({ operator, source, schema, runtime });
+        }
+    }, 90_000);
+});

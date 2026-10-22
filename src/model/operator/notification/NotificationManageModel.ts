@@ -1,22 +1,22 @@
 import axios, { AxiosError } from 'axios';
 import { inject, injectable } from 'inversify';
 import * as path from 'path';
-import Recorded from '../../../db/entities/Recorded';
-import Reserve from '../../../db/entities/Reserve';
-import IVideoUtil from '../../api/video/IVideoUtil';
-import IChannelDB from '../../db/IChannelDB';
+import Recorded from '../../../db/entities/Recorded.js';
+import Reserve from '../../../db/entities/Reserve.js';
+import IVideoUtil from '../../api/video/IVideoUtil.js';
+import IChannelDB from '../../db/IChannelDB.js';
 import IConfigFile, {
     NotificationEvent,
     NotificationTelegramConfig,
     NotificationTrigger,
     NotificationWebhookConfig,
     StorageWarning,
-} from '../../IConfigFile';
-import IConfiguration from '../../IConfiguration';
-import ILogger from '../../ILogger';
-import ILoggerModel from '../../ILoggerModel';
-import { IPromiseQueue } from '../../IPromiseQueue';
-import INotificationManageModel from './INotificationManageModel';
+} from '../../IConfigFile.js';
+import IConfiguration from '../../IConfiguration.js';
+import ILogger from '../../ILogger.js';
+import ILoggerModel from '../../ILoggerModel.js';
+import { IPromiseQueue } from '../../IPromiseQueue.js';
+import INotificationManageModel from './INotificationManageModel.js';
 
 type TemplateValue = string | number | boolean | null;
 
@@ -522,10 +522,11 @@ export default class NotificationManageModel implements INotificationManageModel
                 if (typeof err.response !== 'undefined') {
                     throw new Error(
                         `telegram notification failed: status=${err.response.status} ${err.response.statusText}`,
+                        { cause: err },
                     );
                 }
 
-                throw new Error(`telegram notification failed: ${err.message}`);
+                throw new Error(`telegram notification failed: ${err.message}`, { cause: err });
             }
 
             throw err;
@@ -562,10 +563,11 @@ export default class NotificationManageModel implements INotificationManageModel
                 if (typeof err.response !== 'undefined') {
                     throw new Error(
                         `webhook failed: ${webhookName} status=${err.response.status} ${err.response.statusText}`,
+                        { cause: err },
                     );
                 }
 
-                throw new Error(`webhook failed: ${webhookName} ${err.message}`);
+                throw new Error(`webhook failed: ${webhookName} ${err.message}`, { cause: err });
             }
 
             throw err;

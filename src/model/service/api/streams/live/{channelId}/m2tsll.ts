@@ -1,14 +1,19 @@
 import { Operation } from 'express-openapi';
-import IStreamApiModel, { StreamResponse } from '../../../../../api/stream/IStreamApiModel';
-import container from '../../../../../ModelContainer';
-import * as api from '../../../../api';
+import IStreamApiModel, { StreamResponse } from '../../../../../api/stream/IStreamApiModel.js';
+import container from '../../../../../ModelContainer.js';
+import * as api from '../../../../api.js';
 
+/**
+ * `GET /streams/live/{channelId}/m2tsll` ハンドラ。`IStreamApiModel#startLiveM2TsLLStream`
+ * （低遅延設定）で開始したストリームを response へ直接 pipe し続ける。lifecycle 管理
+ * （keep timer・切断/終了検知）は `m2ts.ts` と同じ。
+ */
 export const get: Operation = async (req, res) => {
     const streamApiModel = container.get<IStreamApiModel>('IStreamApiModel');
 
     let isClosed: boolean = false;
     let result: StreamResponse;
-    let keepTimer: NodeJS.Timer;
+    let keepTimer: NodeJS.Timeout;
 
     const stop = async () => {
         clearInterval(keepTimer);
@@ -27,9 +32,9 @@ export const get: Operation = async (req, res) => {
 
     try {
         result = await streamApiModel.startLiveM2TsLLStream({
-            channelId: parseInt(req.params.channelId, 10),
+            channelId: parseInt(api.pathParam(req, 'channelId'), 10),
             mode: parseInt(req.query.mode as string, 10),
-            decode: req.query.decode === '0' ? false : true,
+            decode: req.query.decode !== '0',
         });
         keepTimer = setInterval(() => {
             streamApiModel.keep(result.streamId);
@@ -63,7 +68,7 @@ export const get: Operation = async (req, res) => {
 };
 
 get.apiDoc = {
-    summary: 'ライブ M2TS Low Latency (tlvdemux 用) ストリーム',
+    summary: 'ライブ M2TS Low Latency (mpegts.js 用) ストリーム',
     tags: ['streams'],
     description: 'ライブ M2TS Low Latency ストリームを取得する',
     parameters: [

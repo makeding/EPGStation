@@ -85,15 +85,15 @@ components:
             type: integer
 
         ChannelType:
-            description: 放送波タイプ
+            description: 放送波タイプ。チューナーサーバーの設定次第でこれ以外の文字列も返り得る
             type: string
             enum:
                 - GR
                 - GR-ALT
                 - BS
-                - BS4K
                 - CS
                 - SKY
+                - BS4K
                 - NW1
                 - NW2
                 - NW3
@@ -239,26 +239,7 @@ components:
                         - BS
                         - CS
                         - SKY
-                        - NW1
-                        - NW2
-                        - NW3
-                        - NW4
-                        - NW5
-                        - NW6
-                        - NW7
-                        - NW8
-                        - NW9
-                        - NW10
-                        - NW11
-                        - NW12
-                        - NW13
-                        - NW14
-                        - NW15
-                        - NW16
-                        - NW17
-                        - NW18
-                        - NW19
-                        - NW20
+                        - BS4K
                     properties:
                         GR:
                             type: boolean
@@ -266,11 +247,11 @@ components:
                             type: boolean
                         BS:
                             type: boolean
-                        BS4K:
-                            type: boolean
                         CS:
                             type: boolean
                         SKY:
+                            type: boolean
+                        BS4K:
                             type: boolean
                         NW1:
                             type: boolean
@@ -399,7 +380,7 @@ components:
                                     items:
                                         $ref: '#/components/schemas/M2TSStreamParam'
                                 m2tsll:
-                                    description: ライブ M2TS Low Latency (tlvdemux 用) ストリーミング設定
+                                    description: ライブ M2TS Low Latency (mpegts.js 用) ストリーミング設定
                                     type: array
                                     items:
                                         type: string
@@ -690,14 +671,12 @@ components:
                 - searchOption
                 - reserveOption
             properties:
-                bangumiId:
-                    description: Bangumi 作品 ID。null の場合は関連付けを解除する
-                    type: integer
-                    minimum: 1
-                    nullable: true
                 isTimeSpecification:
                     description: 時刻指定予約か
                     type: boolean
+                bangumiId:
+                    type: integer
+                    nullable: true
                 searchOption:
                     $ref: '#/components/schemas/RuleSearchOption'
                 reserveOption:
@@ -751,13 +730,9 @@ components:
                     description: GR
                     type: boolean
                 GR-ALT:
-                    description: GR-ALT
                     type: boolean
                 BS:
                     description: BS
-                    type: boolean
-                BS4K:
-                    description: BS4K
                     type: boolean
                 CS:
                     description: CS
@@ -765,125 +740,88 @@ components:
                 SKY:
                     description: SKY
                     type: boolean
+                BS4K:
+                    description: BS4K
+                    type: boolean
                 NW1:
-                    description: NW
                     type: boolean
                 NW2:
-                    description: NW
                     type: boolean
                 NW3:
-                    description: NW
                     type: boolean
                 NW4:
-                    description: NW
                     type: boolean
                 NW5:
-                    description: NW
                     type: boolean
                 NW6:
-                    description: NW
                     type: boolean
                 NW7:
-                    description: NW
                     type: boolean
                 NW8:
-                    description: NW
                     type: boolean
                 NW9:
-                    description: NW
                     type: boolean
                 NW10:
-                    description: NW
                     type: boolean
                 NW11:
-                    description: NW
                     type: boolean
                 NW12:
-                    description: NW
                     type: boolean
                 NW13:
-                    description: NW
                     type: boolean
                 NW14:
-                    description: NW
                     type: boolean
                 NW15:
-                    description: NW
                     type: boolean
                 NW16:
-                    description: NW
                     type: boolean
                 NW17:
-                    description: NW
                     type: boolean
                 NW18:
-                    description: NW
                     type: boolean
                 NW19:
-                    description: NW
                     type: boolean
                 NW20:
-                    description: NW
                     type: boolean
                 NW21:
-                    description: NW
                     type: boolean
                 NW22:
-                    description: NW
                     type: boolean
                 NW23:
-                    description: NW
                     type: boolean
                 NW24:
-                    description: NW
                     type: boolean
                 NW25:
-                    description: NW
                     type: boolean
                 NW26:
-                    description: NW
                     type: boolean
                 NW27:
-                    description: NW
                     type: boolean
                 NW28:
-                    description: NW
                     type: boolean
                 NW29:
-                    description: NW
                     type: boolean
                 NW30:
-                    description: NW
                     type: boolean
                 NW31:
-                    description: NW
                     type: boolean
                 NW32:
-                    description: NW
                     type: boolean
                 NW33:
-                    description: NW
                     type: boolean
                 NW34:
-                    description: NW
                     type: boolean
                 NW35:
-                    description: NW
                     type: boolean
                 NW36:
-                    description: NW
                     type: boolean
                 NW37:
-                    description: NW
                     type: boolean
                 NW38:
-                    description: NW
                     type: boolean
                 NW39:
-                    description: NW
                     type: boolean
                 NW40:
-                    description: NW
                     type: boolean
                 channelIds:
                     description: 放送局
@@ -1113,10 +1051,10 @@ components:
                 - isConflict
                 - isOverlap
                 - allowEndLack
-                - removeDataBroadcast
                 - isTimeSpecified
                 - isDeleteOriginalAfterEncode
                 - channelId
+                - channelType
                 - startAt
                 - endAt
                 - name
@@ -1171,6 +1109,8 @@ components:
                     $ref: '#/components/schemas/ProgramId'
                 channelId:
                     $ref: '#/components/schemas/ChannelId'
+                channelType:
+                    $ref: '#/components/schemas/ChannelType'
                 startAt:
                     $ref: '#/components/schemas/UnixtimeMS'
                 endAt:
@@ -1246,13 +1186,21 @@ components:
                 - overlaps
             properties:
                 normal:
-                    $ref: '#/components/schemas/ReserveListItem'
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ReserveListItem'
                 conflicts:
-                    $ref: '#/components/schemas/ReserveListItem'
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ReserveListItem'
                 skips:
-                    $ref: '#/components/schemas/ReserveListItem'
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ReserveListItem'
                 overlaps:
-                    $ref: '#/components/schemas/ReserveListItem'
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ReserveListItem'
 
         ReserveCnts:
             description: 予約カウント
@@ -1441,7 +1389,7 @@ components:
                     description: ビデオファイル名
                     type: string
                 relativeFilePath:
-                    description: 親ディレクトリからの相対ビデオファイルパス
+                    description: 録画ディレクトリからの相対ファイルパス
                     type: string
                 type:
                     $ref: '#/components/schemas/VideoFileType'
@@ -1604,6 +1552,9 @@ components:
                 - parentDirectoryName
                 - viewName
                 - fileType
+            oneOf:
+                - required: [file]
+                - required: [localFilePath]
             properties:
                 recordedId:
                     $ref: '#/components/schemas/RecordedId'
@@ -1762,7 +1713,7 @@ components:
                     type: boolean
                 channelId:
                     $ref: '#/components/schemas/ChannelId'
-                videoFileId:
+                viodeFileId:
                     $ref: '#/components/schemas/VideoFileId'
                 recordedId:
                     $ref: '#/components/schemas/RecordedId'
@@ -2007,14 +1958,6 @@ components:
             schema:
                 type: boolean
 
-        requiredBS4K:
-            description: BS4K
-            in: query
-            name: BS4K
-            required: true
-            schema:
-                type: boolean
-
         requiredCS:
             description: CS
             in: query
@@ -2031,286 +1974,105 @@ components:
             schema:
                 type: boolean
 
+        optionalBS4K:
+            description: BS4K
+            in: query
+            name: BS4K
+            required: false
+            schema:
+                type: boolean
+
         requiredNW1:
-            description: NW
+            description: NW1
             in: query
             name: NW1
             required: true
-            schema:
-                type: boolean
+            schema: { type: boolean }
         requiredNW2:
-            description: NW
+            description: NW2
             in: query
             name: NW2
             required: true
-            schema:
-                type: boolean
+            schema: { type: boolean }
         requiredNW3:
-            description: NW
+            description: NW3
             in: query
             name: NW3
             required: true
-            schema:
-                type: boolean
+            schema: { type: boolean }
         requiredNW4:
-            description: NW
+            description: NW4
             in: query
             name: NW4
             required: true
-            schema:
-                type: boolean
+            schema: { type: boolean }
         requiredNW5:
-            description: NW
+            description: NW5
             in: query
             name: NW5
             required: true
-            schema:
-                type: boolean
+            schema: { type: boolean }
         requiredNW6:
-            description: NW
+            description: NW6
             in: query
             name: NW6
             required: true
-            schema:
-                type: boolean
+            schema: { type: boolean }
         requiredNW7:
-            description: NW
+            description: NW7
             in: query
             name: NW7
             required: true
-            schema:
-                type: boolean
+            schema: { type: boolean }
         requiredNW8:
-            description: NW
+            description: NW8
             in: query
             name: NW8
             required: true
-            schema:
-                type: boolean
+            schema: { type: boolean }
         requiredNW9:
-            description: NW
+            description: NW9
             in: query
             name: NW9
             required: true
-            schema:
-                type: boolean
+            schema: { type: boolean }
         requiredNW10:
-            description: NW
+            description: NW10
             in: query
             name: NW10
             required: true
-            schema:
-                type: boolean
-        requiredNW11:
-            description: NW
-            in: query
-            name: NW11
-            required: true
-            schema:
-                type: boolean
-        requiredNW12:
-            description: NW
-            in: query
-            name: NW12
-            required: true
-            schema:
-                type: boolean
-        requiredNW13:
-            description: NW
-            in: query
-            name: NW13
-            required: true
-            schema:
-                type: boolean
-        requiredNW14:
-            description: NW
-            in: query
-            name: NW14
-            required: true
-            schema:
-                type: boolean
-        requiredNW15:
-            description: NW
-            in: query
-            name: NW15
-            required: true
-            schema:
-                type: boolean
-        requiredNW16:
-            description: NW
-            in: query
-            name: NW16
-            required: true
-            schema:
-                type: boolean
-        requiredNW17:
-            description: NW
-            in: query
-            name: NW17
-            required: true
-            schema:
-                type: boolean
-        requiredNW18:
-            description: NW
-            in: query
-            name: NW18
-            required: true
-            schema:
-                type: boolean
-        requiredNW19:
-            description: NW
-            in: query
-            name: NW19
-            required: true
-            schema:
-                type: boolean
-        requiredNW20:
-            description: NW
-            in: query
-            name: NW20
-            required: true
-            schema:
-                type: boolean
-        requiredNW21:
-            description: NW
-            in: query
-            name: NW21
-            required: true
-            schema:
-                type: boolean
-        requiredNW22:
-            description: NW
-            in: query
-            name: NW22
-            required: true
-            schema:
-                type: boolean
-        requiredNW23:
-            description: NW
-            in: query
-            name: NW23
-            required: true
-            schema:
-                type: boolean
-        requiredNW24:
-            description: NW
-            in: query
-            name: NW24
-            required: true
-            schema:
-                type: boolean
-        requiredNW25:
-            description: NW
-            in: query
-            name: NW25
-            required: true
-            schema:
-                type: boolean
-        requiredNW26:
-            description: NW
-            in: query
-            name: NW26
-            required: true
-            schema:
-                type: boolean
-        requiredNW27:
-            description: NW
-            in: query
-            name: NW27
-            required: true
-            schema:
-                type: boolean
-        requiredNW28:
-            description: NW
-            in: query
-            name: NW28
-            required: true
-            schema:
-                type: boolean
-        requiredNW29:
-            description: NW
-            in: query
-            name: NW29
-            required: true
-            schema:
-                type: boolean
-        requiredNW30:
-            description: NW
-            in: query
-            name: NW30
-            required: true
-            schema:
-                type: boolean
-        requiredNW31:
-            description: NW
-            in: query
-            name: NW31
-            required: true
-            schema:
-                type: boolean
-        requiredNW32:
-            description: NW
-            in: query
-            name: NW32
-            required: true
-            schema:
-                type: boolean
-        requiredNW33:
-            description: NW
-            in: query
-            name: NW33
-            required: true
-            schema:
-                type: boolean
-        requiredNW34:
-            description: NW
-            in: query
-            name: NW34
-            required: true
-            schema:
-                type: boolean
-        requiredNW35:
-            description: NW
-            in: query
-            name: NW35
-            required: true
-            schema:
-                type: boolean
-        requiredNW36:
-            description: NW
-            in: query
-            name: NW36
-            required: true
-            schema:
-                type: boolean
-        requiredNW37:
-            description: NW
-            in: query
-            name: NW37
-            required: true
-            schema:
-                type: boolean
-        requiredNW38:
-            description: NW
-            in: query
-            name: NW38
-            required: true
-            schema:
-                type: boolean
-        requiredNW39:
-            description: NW
-            in: query
-            name: NW39
-            required: true
-            schema:
-                type: boolean
-        requiredNW40:
-            description: NW
-            in: query
-            name: NW40
-            required: true
-            schema:
-                type: boolean
+            schema: { type: boolean }
+        requiredNW11: { description: NW11, in: query, name: NW11, required: true, schema: { type: boolean } }
+        requiredNW12: { description: NW12, in: query, name: NW12, required: true, schema: { type: boolean } }
+        requiredNW13: { description: NW13, in: query, name: NW13, required: true, schema: { type: boolean } }
+        requiredNW14: { description: NW14, in: query, name: NW14, required: true, schema: { type: boolean } }
+        requiredNW15: { description: NW15, in: query, name: NW15, required: true, schema: { type: boolean } }
+        requiredNW16: { description: NW16, in: query, name: NW16, required: true, schema: { type: boolean } }
+        requiredNW17: { description: NW17, in: query, name: NW17, required: true, schema: { type: boolean } }
+        requiredNW18: { description: NW18, in: query, name: NW18, required: true, schema: { type: boolean } }
+        requiredNW19: { description: NW19, in: query, name: NW19, required: true, schema: { type: boolean } }
+        requiredNW20: { description: NW20, in: query, name: NW20, required: true, schema: { type: boolean } }
+        requiredNW21: { description: NW21, in: query, name: NW21, required: true, schema: { type: boolean } }
+        requiredNW22: { description: NW22, in: query, name: NW22, required: true, schema: { type: boolean } }
+        requiredNW23: { description: NW23, in: query, name: NW23, required: true, schema: { type: boolean } }
+        requiredNW24: { description: NW24, in: query, name: NW24, required: true, schema: { type: boolean } }
+        requiredNW25: { description: NW25, in: query, name: NW25, required: true, schema: { type: boolean } }
+        requiredNW26: { description: NW26, in: query, name: NW26, required: true, schema: { type: boolean } }
+        requiredNW27: { description: NW27, in: query, name: NW27, required: true, schema: { type: boolean } }
+        requiredNW28: { description: NW28, in: query, name: NW28, required: true, schema: { type: boolean } }
+        requiredNW29: { description: NW29, in: query, name: NW29, required: true, schema: { type: boolean } }
+        requiredNW30: { description: NW30, in: query, name: NW30, required: true, schema: { type: boolean } }
+        requiredNW31: { description: NW31, in: query, name: NW31, required: true, schema: { type: boolean } }
+        requiredNW32: { description: NW32, in: query, name: NW32, required: true, schema: { type: boolean } }
+        requiredNW33: { description: NW33, in: query, name: NW33, required: true, schema: { type: boolean } }
+        requiredNW34: { description: NW34, in: query, name: NW34, required: true, schema: { type: boolean } }
+        requiredNW35: { description: NW35, in: query, name: NW35, required: true, schema: { type: boolean } }
+        requiredNW36: { description: NW36, in: query, name: NW36, required: true, schema: { type: boolean } }
+        requiredNW37: { description: NW37, in: query, name: NW37, required: true, schema: { type: boolean } }
+        requiredNW38: { description: NW38, in: query, name: NW38, required: true, schema: { type: boolean } }
+        requiredNW39: { description: NW39, in: query, name: NW39, required: true, schema: { type: boolean } }
+        requiredNW40: { description: NW40, in: query, name: NW40, required: true, schema: { type: boolean } }
+
         GetReserveType:
             description: 予約情報取得タイプ
             in: query
