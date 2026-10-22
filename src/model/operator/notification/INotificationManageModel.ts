@@ -9,5 +9,5 @@ export default interface INotificationManageModel {
     addRecordingFailed(recorded: Recorded): void;
     addRecordingPrepFailed(reserve: Reserve): void;
     addRecordingRetryOver(reserve: Reserve): void;
-    addStorageWarning(warning: StorageWarning): void;
+    addStorageWarning(warning: StorageWarning): Promise<boolean>;
 }

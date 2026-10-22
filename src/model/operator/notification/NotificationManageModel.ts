@@ -147,16 +147,17 @@ export default class NotificationManageModel implements INotificationManageModel
         this.addReserve('recordingRetryOver', reserve);
     }
 
-    public addStorageWarning(warning: StorageWarning): void {
-        if (this.isEnabled('storageWarning') === false) {
-            return;
-        }
-
-        this.queue.add<void>(() => {
-            return this.send(this.createStorageContext(warning)).catch(err => {
+    public async addStorageWarning(warning: StorageWarning): Promise<boolean> {
+        if (!this.isEnabled('storageWarning')) return false;
+        return this.queue.add(async () => {
+            try {
+                await this.send(this.createStorageContext(warning));
+                return true;
+            } catch {
+                // Provider errors can contain Telegram tokens or webhook credentials.
                 this.log.system.error('notification error: storageWarning');
-                this.log.system.error(err);
-            });
+                return false;
+            }
         });
     }
 
@@ -655,11 +656,11 @@ export default class NotificationManageModel implements INotificationManageModel
             const threshold = context.values.storageThreshold;
             return [
                 title,
-                `レベル: ${context.values.storageLevel}`,
                 `ストレージ: ${context.values.storageName}`,
                 `パス: ${context.values.storagePath}`,
                 `空き容量: ${typeof free === 'number' ? (free / 1024).toFixed(1) : ''} GiB`,
                 `閾値: ${typeof threshold === 'number' ? (threshold / 1024).toFixed(1) : ''} GiB`,
+                '録画が失敗する前に、この保存先の録画を移動・圧縮するか、保存先を変更してください。',
             ].join('\n');
         }
 
