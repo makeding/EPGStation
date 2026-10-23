@@ -1447,12 +1447,10 @@ class RecorderModel implements IRecorderModel {
                     ? fs.createWriteStream(
                           recPath.fullPath,
                           writeHighWaterMark === undefined
-                              ? { flags: 'wx' }
+                              ? { flags: 'wx', highWaterMark: 1024 * 1024 }
                               : { flags: 'wx', highWaterMark: writeHighWaterMark * 1024 },
                       )
-                    : recPath.fileHandle.createWriteStream(
-                          writeHighWaterMark === undefined ? undefined : { highWaterMark: writeHighWaterMark * 1024 },
-                      );
+                    : recPath.fileHandle.createWriteStream({ highWaterMark: (writeHighWaterMark ?? 1024) * 1024 });
         } catch (err) {
             await cleanupUnstartedRecFile();
             throw err;
@@ -2606,19 +2604,28 @@ class RecorderModel implements IRecorderModel {
 
     /**
      * 受信 socket と stream の buffer に届いている data を、録画 file への pipe が読み終えるまで待つ。
-     * event loop を一周させるごとに受信量を確かめ、受信量が増えず buffer が空になった時点、stream が終わった時点、
+     * event loop を一周させるごとに受信量を確かめ、受信量が増えず受信・録画Writerの待機分が空で、
+     * streamが停止中でもWriterのdrain待ちでもない時点、streamが終わった時点、
      * または `CANCEL_DRAIN_LIMIT_MS` を過ぎた時点で戻る。
      * 同期の DB 処理などで event loop が直前まで塞がれていた間に届いた data を、stream の破棄で捨てないために使う。
      * @param currentStream: 録画中の stream
      */
     private async readArrivedStreamData(currentStream: http.IncomingMessage): Promise<void> {
+        if (this.recFile === null) return;
         const socket = currentStream.socket;
         const deadline = Date.now() + RecorderModel.CANCEL_DRAIN_LIMIT_MS;
         let lastBytesRead = -1;
         let quietTurns = 0;
         while (currentStream.destroyed === false && currentStream.readableEnded === false && Date.now() < deadline) {
             await new Promise<void>(resolve => setImmediate(resolve));
-            if (socket.bytesRead === lastBytesRead && currentStream.readableLength === 0) {
+            if (
+                socket.bytesRead === lastBytesRead &&
+                currentStream.readableLength === 0 &&
+                !currentStream.isPaused() &&
+                this.recFile !== null &&
+                this.recFile.writableLength === 0 &&
+                !this.recFile.writableNeedDrain
+            ) {
                 quietTurns++;
                 // A local sender's write callback can run before the peer socket becomes
                 // readable. Require several quiet event-loop turns so data already in

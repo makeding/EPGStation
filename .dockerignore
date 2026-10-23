@@ -6,4 +6,7 @@ client/playwright-report/
 client/coverage/
 Dockerfile*
 .devcontainer
+# git の管理情報と GitHub の設定は、image に要らない。
+.git
+.github
 recorded/*
