@@ -143,7 +143,7 @@ describe('fork recording extensions', () => {
         expect(model.getBroadcastStatus()).toMatchObject({ NW1: true, NW2: false, NW40: true });
     });
 
-    it('keeps BS4K MMTS undecoded for program and time-specified service streams', async () => {
+    it('requests decoded TLV for BS4K MMTS and retains the raw-MMTS legacy fallback for both stream paths', async () => {
         const stream = new PassThrough();
         const openProgramStream = vi.fn(async () => ({ close: vi.fn(), stream }));
         const openServiceStream = vi.fn(async () => ({ close: vi.fn(), stream }));
@@ -170,8 +170,12 @@ describe('fork recording extensions', () => {
             isTimeSpecifiedEndExternallyScheduled: true,
         });
 
-        expect(openProgramStream).toHaveBeenCalledWith(expect.objectContaining({ decode: false, programId: 201 }));
-        expect(openServiceStream).toHaveBeenCalledWith(expect.objectContaining({ decode: false, serviceId: 101 }));
+        expect(openProgramStream).toHaveBeenCalledWith(
+            expect.objectContaining({ decode: true, format: 'tlv', legacyDecode: false, programId: 201 }),
+        );
+        expect(openServiceStream).toHaveBeenCalledWith(
+            expect.objectContaining({ decode: true, format: 'tlv', legacyDecode: false, serviceId: 101 }),
+        );
         stream.destroy();
     });
 

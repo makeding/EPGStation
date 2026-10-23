@@ -389,6 +389,7 @@ export default abstract class LiveStreamBaseModel
                 serviceId: this.processOption.channelId,
                 priority: config.streamingPriority,
                 decode: this.processOption.decode !== false,
+                format: 'ts',
             })
             .catch(err => {
                 if (this.processOption !== null) {

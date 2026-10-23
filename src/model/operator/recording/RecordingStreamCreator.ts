@@ -252,7 +252,7 @@ export default class RecordingStreamCreator implements IRecordingStreamCreator {
         options?: RecordingStreamCreationOptions,
     ): Promise<http.IncomingMessage> {
         const priority = reserve.isConflict ? this.config.conflictPriority : this.config.recPriority;
-        const decode = this.shouldDecode(reserve);
+        const streamOptions = this.streamOptions(reserve);
 
         if (reserve.programId === null) {
             // 時刻指定予約
@@ -260,7 +260,7 @@ export default class RecordingStreamCreator implements IRecordingStreamCreator {
         } else {
             // programId 指定予約
             return this.tunerServerAccess
-                .openProgramStream({ decode, programId: reserve.programId, priority, signal: abortSignal })
+                .openProgramStream({ ...streamOptions, programId: reserve.programId, priority, signal: abortSignal })
                 .then(handle => this.adoptStream(handle));
         }
     }
@@ -323,7 +323,7 @@ export default class RecordingStreamCreator implements IRecordingStreamCreator {
         // mirakurun から channel stream を受け取る
         const channelStream = await this.tunerServerAccess
             .openServiceStream({
-                decode: this.shouldDecode(reserve),
+                ...this.streamOptions(reserve),
                 serviceId: reserve.channelId,
                 priority,
                 signal: abortSignal,
@@ -362,8 +362,11 @@ export default class RecordingStreamCreator implements IRecordingStreamCreator {
         return channelStream;
     }
 
-    private shouldDecode(reserve: Reserve): boolean {
-        return reserve.channelType !== 'BS4K' || this.config.recordedBS4KFormat !== 'mmts';
+    private streamOptions(reserve: Reserve): { decode: boolean; format?: 'ts' | 'tlv'; legacyDecode?: boolean } {
+        if (reserve.channelType === 'BS4K' && this.config.recordedBS4KFormat === 'mmts') {
+            return { decode: true, format: 'tlv', legacyDecode: false };
+        }
+        return { decode: true, format: 'ts' };
     }
 
     /**

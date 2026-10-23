@@ -195,6 +195,95 @@ const exerciseEverything = async (access: any, product: Product): Promise<unknow
     return results;
 };
 
+const streamBody = async (handle: { stream: AsyncIterable<Buffer>; close: () => void }): Promise<Buffer> => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of handle.stream) chunks.push(chunk);
+    handle.close();
+    return Buffer.concat(chunks);
+};
+
+describe('stream format negotiation over real HTTP', () => {
+    const docs = {
+        paths: {
+            '/programs/{id}/stream': {
+                get: { parameters: [{ enum: ['ts', 'tlv'], in: 'query', name: 'format', type: 'string' }] },
+            },
+            '/services/{id}/stream': {
+                get: { parameters: [{ enum: ['ts', 'tlv'], in: 'query', name: 'format', type: 'string' }] },
+            },
+        },
+        swagger: '2.0',
+    };
+
+    it('[TA-REAL-HTTP-STREAM-FORMAT] uses documented format independently from decode and preserves actual stream bytes', async () => {
+        const [server, target] = await start((request, response) => {
+            if (request.url === '/api/docs') return json(response, docs);
+            if (request.url === '/api/programs/201/stream?decode=1&format=tlv') {
+                response.writeHead(200, { 'Content-Type': 'application/octet-stream' });
+                response.end(Buffer.from('decoded-tlv'));
+                return;
+            }
+            if (request.url === '/api/services/101/stream?decode=0&format=ts') {
+                response.writeHead(200, { 'Content-Type': 'video/MP2T' });
+                response.end(Buffer.from('raw-ts'));
+                return;
+            }
+            json(response, {}, 404);
+        });
+        const access = createAccess(target);
+
+        await expect(streamBody(await access.openProgramStream({ decode: true, format: 'tlv', priority: 7, programId: 201 }))).resolves.toEqual(Buffer.from('decoded-tlv'));
+        await expect(streamBody(await access.openServiceStream({ decode: false, format: 'ts', priority: 11, serviceId: 101 }))).resolves.toEqual(Buffer.from('raw-ts'));
+        expect(server.requests.map(request => request.url)).toEqual([
+            '/api/docs',
+            '/api/programs/201/stream?decode=1&format=tlv',
+            '/api/services/101/stream?decode=0&format=ts',
+        ]);
+    });
+
+    it('[TA-REAL-HTTP-STREAM-FORMAT-LEGACY] retains legacy decode URLs when documentation is unavailable and retries discovery later', async () => {
+        const [server, target] = await start((request, response) => {
+            if (request.url === '/api/docs') return json(response, {}, 404);
+            if (request.url === '/api/programs/201/stream?decode=0') {
+                response.writeHead(200, { 'Content-Type': 'application/octet-stream' });
+                response.end(Buffer.from('legacy-mmts'));
+                return;
+            }
+            json(response, {}, 404);
+        });
+        const access = createAccess(target);
+
+        await expect(
+            streamBody(
+                await access.openProgramStream({
+                    decode: true,
+                    format: 'tlv',
+                    legacyDecode: false,
+                    priority: 7,
+                    programId: 201,
+                }),
+            ),
+        ).resolves.toEqual(Buffer.from('legacy-mmts'));
+        await expect(
+            streamBody(
+                await access.openProgramStream({
+                    decode: true,
+                    format: 'tlv',
+                    legacyDecode: false,
+                    priority: 7,
+                    programId: 201,
+                }),
+            ),
+        ).resolves.toEqual(Buffer.from('legacy-mmts'));
+        expect(server.requests.map(request => request.url)).toEqual([
+            '/api/docs',
+            '/api/programs/201/stream?decode=0',
+            '/api/docs',
+            '/api/programs/201/stream?decode=0',
+        ]);
+    });
+});
+
 describe('a tuner server of the minimum or a future version reached over real HTTP', () => {
     const versions: Array<{ label: string; product: Product; version: string; extra: boolean }> = [
         ...compatibility.fixtures.map(fixture => ({

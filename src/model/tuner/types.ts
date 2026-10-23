@@ -158,6 +158,10 @@ export interface TunerRequestOptions {
 
 /** 番組指定でのストリーム開始要求。`priority`はチューナーサーバーへ渡す視聴/録画優先度で、値が高いほど他の利用中チューナーを奪って確保しやすい。 */
 export interface TunerProgramStreamRequest extends TunerRequestOptions {
+    /** 希望するコンテナ。対応を Swagger で確認できたサーバーにだけ送る。 */
+    readonly format?: 'ts' | 'tlv';
+    /** `format` 非対応時に互換 URL へ送る従来の decode 値。 */
+    readonly legacyDecode?: boolean;
     readonly decode?: boolean;
     readonly programId: ProgramId;
     readonly priority: number;
@@ -165,6 +169,10 @@ export interface TunerProgramStreamRequest extends TunerRequestOptions {
 
 /** サービス（チャンネル）指定でのストリーム開始要求。`priority`の意味は`TunerProgramStreamRequest`と同じ。 */
 export interface TunerServiceStreamRequest extends TunerRequestOptions {
+    /** 希望するコンテナ。対応を Swagger で確認できたサーバーにだけ送る。 */
+    readonly format?: 'ts' | 'tlv';
+    /** `format` 非対応時に互換 URL へ送る従来の decode 値。 */
+    readonly legacyDecode?: boolean;
     readonly decode?: boolean;
     readonly serviceId: TunerServerId;
     readonly priority: number;

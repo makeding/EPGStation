@@ -40,6 +40,8 @@ interface TunerTimeoutSettings {
 
 const DEFAULT_TUNER_TIMEOUT_MS = 30_000;
 const MAX_TUNER_TIMEOUT_MS = 2_147_483_647;
+const STREAM_FORMAT_SUPPORT_TTL_MS = 60_000;
+const STREAM_FORMAT_DISCOVERY_TIMEOUT_MS = 2_000;
 
 const timeout = (value: unknown): number => {
     if (value === undefined) return DEFAULT_TUNER_TIMEOUT_MS;
@@ -291,6 +293,10 @@ export default class TunerServerAccessModel implements TunerServerAccess {
     private readonly streamTimeoutMs: number;
     /** 変更フィード機能の依存一式。未設定（`undefined`）の場合、`openChangeFeed`は例外を投げる。 */
     private readonly changeFeed: TunerChangeFeedDependencies | undefined;
+    /** `/api/docs` から取得した format 対応状況。短時間だけ保持し、通信失敗は保存しない。 */
+    private streamFormatSupport: { readonly expiresAt: number; readonly supported: boolean } | undefined;
+    /** 同時要求で共有する `/api/docs` の取得。個別の caller signal はこの取得を中断しない。 */
+    private streamFormatSupportPromise: Promise<boolean> | undefined;
 
     /**
      * @param connectionTarget 設定ファイルのチューナーサーバー接続先文字列（`parseConnectionTarget`で解釈）。
@@ -370,17 +376,17 @@ export default class TunerServerAccessModel implements TunerServerAccess {
         );
     }
 
-    public openProgramStream(request: TunerProgramStreamRequest): Promise<TunerStreamHandle> {
+    public async openProgramStream(request: TunerProgramStreamRequest): Promise<TunerStreamHandle> {
         return this.openStream(
-            `/api/programs/${validId(request.programId)}/stream?decode=${request.decode === false ? 0 : 1}`,
+            await this.streamPath(`/api/programs/${validId(request.programId)}/stream`, request),
             request.priority,
             request.signal,
         );
     }
 
-    public openServiceStream(request: TunerServiceStreamRequest): Promise<TunerStreamHandle> {
+    public async openServiceStream(request: TunerServiceStreamRequest): Promise<TunerStreamHandle> {
         return this.openStream(
-            `/api/services/${validId(request.serviceId)}/stream?decode=${request.decode === false ? 0 : 1}`,
+            await this.streamPath(`/api/services/${validId(request.serviceId)}/stream`, request),
             request.priority,
             request.signal,
         );
@@ -411,6 +417,92 @@ export default class TunerServerAccessModel implements TunerServerAccess {
             options => this.transport.openStream!(path, priority, options),
             handle => handle.close(),
         );
+    }
+
+    private async streamPath(
+        path: string,
+        request: Pick<
+            TunerProgramStreamRequest | TunerServiceStreamRequest,
+            'decode' | 'format' | 'legacyDecode' | 'signal'
+        >,
+    ): Promise<string> {
+        const decode = request.decode !== false;
+        if (request.format === undefined) return `${path}?decode=${decode ? 1 : 0}`;
+        if (await this.waitForStreamFormatSupport(request.signal)) {
+            return `${path}?decode=${decode ? 1 : 0}&format=${request.format}`;
+        }
+        const legacyDecode = request.legacyDecode ?? decode;
+        return `${path}?decode=${legacyDecode ? 1 : 0}`;
+    }
+
+    private async supportsStreamFormat(): Promise<boolean> {
+        const cached = this.streamFormatSupport;
+        if (cached !== undefined && cached.expiresAt > Date.now()) return cached.supported;
+        if (this.streamFormatSupportPromise !== undefined) return this.streamFormatSupportPromise.catch(() => false);
+        const operation = this.withDeadline(
+            Math.min(this.restTimeoutMs, STREAM_FORMAT_DISCOVERY_TIMEOUT_MS),
+            undefined,
+            request => this.transport.getJson('/api/docs', request),
+        )
+            .then(doc => this.openApiSupportsStreamFormat(doc))
+            .then(supported => {
+                this.streamFormatSupport = { expiresAt: Date.now() + STREAM_FORMAT_SUPPORT_TTL_MS, supported };
+                return supported;
+            });
+        this.streamFormatSupportPromise = operation;
+        try {
+            return await operation;
+        } catch {
+            return false;
+        } finally {
+            this.streamFormatSupportPromise = undefined;
+        }
+    }
+
+    private waitForStreamFormatSupport(signal: AbortSignal | undefined): Promise<boolean> {
+        if (signal?.aborted === true) return Promise.reject(new Error('Tuner request cancelled'));
+        const support = this.supportsStreamFormat();
+        if (signal === undefined) return support;
+        return new Promise((resolve, reject) => {
+            const onAbort = (): void => {
+                signal.removeEventListener('abort', onAbort);
+                reject(new Error('Tuner request cancelled'));
+            };
+            signal.addEventListener('abort', onAbort, { once: true });
+            support.then(
+                value => {
+                    signal.removeEventListener('abort', onAbort);
+                    resolve(value);
+                },
+                error => {
+                    signal.removeEventListener('abort', onAbort);
+                    reject(error);
+                },
+            );
+        });
+    }
+
+    private openApiSupportsStreamFormat(doc: unknown): boolean {
+        const pathMap = record(record(doc).paths);
+        return ['/services/{id}/stream', '/programs/{id}/stream'].every(path => {
+            const definition = record(pathMap[path]);
+            const get = record(definition.get);
+            const parameters = [
+                ...(definition.parameters === undefined ? [] : array(definition.parameters)),
+                ...(get.parameters === undefined ? [] : array(get.parameters)),
+            ];
+            return parameters.some(parameter => {
+                const value = record(parameter);
+                return (
+                    value.in === 'query' &&
+                    value.name === 'format' &&
+                    value.type === 'string' &&
+                    Array.isArray(value.enum) &&
+                    value.enum.includes('ts') &&
+                    value.enum.includes('tlv')
+                );
+            });
+        });
     }
 
     private withDeadline<T>(

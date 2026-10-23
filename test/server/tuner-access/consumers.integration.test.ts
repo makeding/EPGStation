@@ -230,7 +230,13 @@ describe('tuner access consumer integration', () => {
                 recordingSignal,
             ),
         ).resolves.toBe(recordingStream);
-        expect(openProgramStream).toHaveBeenCalledWith({ programId: 841, priority: 7, signal: recordingSignal });
+        expect(openProgramStream).toHaveBeenCalledWith({
+            decode: true,
+            format: 'ts',
+            programId: 841,
+            priority: 7,
+            signal: recordingSignal,
+        });
         recordingStream.resume();
         recordingStream.end();
         await vi.waitFor(() => expect(recordingClose).toHaveBeenCalledOnce());
@@ -244,7 +250,7 @@ describe('tuner access consumer integration', () => {
 
         await live.start(0);
         expect(live.getStream()).toBe(liveStream);
-        expect(openServiceStream).toHaveBeenCalledWith({ serviceId: 150, priority: 11 });
+        expect(openServiceStream).toHaveBeenCalledWith({ decode: true, format: 'ts', serviceId: 150, priority: 11 });
         liveStream.destroy();
         await vi.waitFor(() => expect(liveClose).toHaveBeenCalledOnce());
 
@@ -425,8 +431,8 @@ describe('tuner access consumer integration', () => {
     });
 
     it.each([
-        ['program', 240, false, 'openProgramStream', { programId: 240, priority: 7 }],
-        ['service', null, true, 'openServiceStream', { serviceId: 140, priority: 13 }],
+        ['program', 240, false, 'openProgramStream', { decode: true, format: 'ts', programId: 240, priority: 7 }],
+        ['service', null, true, 'openServiceStream', { decode: true, format: 'ts', serviceId: 140, priority: 13 }],
     ])(
         '[TA-6.2] recording obtains the %s Readable through the canonical stream port and closes its handle once',
         async (_kind, programId, isConflict, operation, expectedRequest) => {
@@ -477,7 +483,7 @@ describe('tuner access consumer integration', () => {
         await live.start(0);
 
         expect(live.getStream()).toBe(stream);
-        expect(openServiceStream).toHaveBeenCalledWith({ serviceId: 150, priority: 11 });
+        expect(openServiceStream).toHaveBeenCalledWith({ decode: true, format: 'ts', serviceId: 150, priority: 11 });
         stream.destroy();
         await vi.waitFor(() => expect(close).toHaveBeenCalledOnce());
         stream.emit('close');
