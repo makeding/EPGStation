@@ -2785,6 +2785,10 @@ class RecorderModel implements IRecorderModel {
                     }
                 } else {
                     // 録画中に終了時間が変更されたらイベントリレーの確認タイマーも再設定する
+                    if (this.reserve.endAt !== newReserve.endAt && this.isRecording === true &&
+                        newReserve.channelType === 'BS4K' && this.config.recordedBS4KFormat === 'mmts') {
+                        this.streamCreator.changeEndAt(newReserve);
+                    }
                     if (this.reserve.endAt !== newReserve.endAt && this.isRecording === true) {
                         this.setEventRelayTimer(newReserve);
                     }

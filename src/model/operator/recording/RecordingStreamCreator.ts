@@ -38,6 +38,7 @@ export default class RecordingStreamCreator implements IRecordingStreamCreator {
     /** reserveId → 「時刻指定予約のストリームを終了時刻に破棄する」timer の対応表。
      *  終了時刻の変更（`registerTimeSpecifiedEnd`）のたびに張り直される。 */
     private timerIndex: TimerIndex = {};
+    private rawProgramStreams = new Map<number, http.IncomingMessage>();
     /** `create`が返した`http.IncomingMessage`から、close操作を持つ元の`TunerStreamHandle`を
      *  引けるようにする対応表（streamそのものにはclose操作が無いため）。 */
     private readonly streamHandleIndex = new WeakMap<http.IncomingMessage, TunerStreamHandle>();
@@ -261,7 +262,20 @@ export default class RecordingStreamCreator implements IRecordingStreamCreator {
             // programId 指定予約
             return this.tunerServerAccess
                 .openProgramStream({ ...streamOptions, programId: reserve.programId, priority, signal: abortSignal })
-                .then(handle => this.adoptStream(handle));
+                .then(handle => {
+                    const stream = this.adoptStream(handle);
+                    if (reserve.channelType === 'BS4K' && this.config.recordedBS4KFormat === 'mmts') {
+                        this.rawProgramStreams.set(reserve.id, stream);
+                        this.changeEndAt(reserve);
+                        finished(stream, {}, () => {
+                            if (this.rawProgramStreams.get(reserve.id) !== stream) return;
+                            this.rawProgramStreams.delete(reserve.id);
+                            clearTimeout(this.timerIndex[reserve.id]);
+                            delete this.timerIndex[reserve.id];
+                        });
+                    }
+                    return stream;
+                });
         }
     }
 
@@ -401,6 +415,15 @@ export default class RecordingStreamCreator implements IRecordingStreamCreator {
      * @param reserve
      */
     public changeEndAt(reserve: Reserve): void {
+        const rawStream = this.rawProgramStreams.get(reserve.id);
+        if (rawStream !== undefined) {
+            clearTimeout(this.timerIndex[reserve.id]);
+            this.timerIndex[reserve.id] = setTimeout(() => {
+                this.log.system.warn(`raw 4K recording reached scheduled end: ${reserve.id}`);
+                this.closeStream(rawStream);
+            }, Math.max(0, reserve.endAt - Date.now() + 1000 * this.config.timeSpecifiedEndMargin));
+            return;
+        }
         if (reserve.programId !== null || typeof this.timerIndex[reserve.id] === 'undefined') {
             throw new Error('StreamChangeAtError');
         }
